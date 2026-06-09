@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>✊ Riot Music</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="/css/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <a href="#/" class="brand">
+        <span class="brand-mark">✊</span>
+        <span class="brand-text">Riot<span class="brand-accent">Music</span></span>
+      </a>
+      <nav class="nav">
+        <a href="#/" class="nav-link" data-route="home">● Start</a>
+        <a href="#/catalog" class="nav-link" data-route="catalog">◆ Katalog</a>
+        <a href="#/manifest" class="nav-link" data-route="manifest">✦ Manifest</a>
+        <a href="#/kontakt" class="nav-link" data-route="kontakt">✉ Kontakt</a>
+        <a href="/artist.html" class="nav-link nav-studio">🎙 Für Künstler:innen</a>
+        <a href="/admin.html" id="nav-admin" class="nav-link nav-admin" style="display:none">🛡 Admin-Zugang</a>
+      </nav>
+      <div class="sidebar-foot">
+        <div class="legal-links">
+          <a href="/impressum.html">Impressum</a>
+          <a href="/datenschutz.html">Datenschutz</a>
+          <a href="/agb.html">AGB</a>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Hauptbereich -->
+    <main class="main">
+      <header class="topbar">
+        <form id="search-form" class="search">
+          <input id="search-input" type="search" placeholder="Künstler:innen, Releases, Songs suchen…" autocomplete="off" />
+          <select id="search-genre" class="search-genre">
+            <option value="">Alle Genres</option>
+          </select>
+          <button type="submit" class="search-btn">Suchen</button>
+        </form>
+        <button id="btn-radio" class="radio-btn" title="Endlose Zufallswiedergabe aller Künstler:innen">
+          <span class="radio-dot"></span>📻 Radio
+        </button>
+        <button id="btn-donate" class="donate-btn" style="display:none" title="Direkt an die Künstler:in spenden">
+          ♥ Spenden
+        </button>
+      </header>
+      <section id="view" class="view">
+        <!-- Inhalt wird per JS gerendert -->
+      </section>
+    </main>
+  </div>
+
+  <!-- Persistenter Player -->
+  <footer class="player" id="player" aria-label="Wiedergabe">
+    <canvas id="waveform" class="waveform" aria-hidden="true"></canvas>
+    <div class="player-track">
+      <div class="player-cover" id="player-cover">♪</div>
+      <div class="player-meta">
+        <div class="player-title" id="player-title">Nichts ausgewählt</div>
+        <a class="player-artist" id="player-artist" href="#/"></a>
+      </div>
+    </div>
+
+    <div class="player-center">
+      <div class="player-controls">
+        <button id="btn-prev" class="ctrl" title="Vorheriger Track">⏮</button>
+        <button id="btn-play" class="ctrl ctrl-play" title="Abspielen / Pause">▶</button>
+        <button id="btn-next" class="ctrl" title="Nächster Track">⏭</button>
+        <button id="btn-loop" class="ctrl ctrl-loop" title="Wiederholen: aus">🔁</button>
+      </div>
+      <div class="player-seek">
+        <span id="time-cur" class="time">0:00</span>
+        <input id="seek" type="range" min="0" max="1000" value="0" step="1" />
+        <span id="time-dur" class="time">0:00</span>
+      </div>
+    </div>
+
+    <div class="player-right">
+      <span class="vol-icon">🔊</span>
+      <input id="volume" type="range" min="0" max="100" value="80" />
+    </div>
+  </footer>
+
+  <audio id="audio" preload="metadata"></audio>
+  <script src="/js/app.js"></script>
+</body>
+</html>

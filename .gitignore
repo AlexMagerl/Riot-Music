@@ -1,0 +1,38 @@
+# Virtuelle Umgebung
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Generierte Audiodateien (per generate_media.py reproduzierbar)
+backend/media/
+
+# Auth: Benutzerkonten (Passwort-Hashes) & Signatur-Secret – niemals einchecken
+backend/data/users.json
+backend/data/secret.key
+
+# Konfiguration mit Secrets (SMTP-Passwort, API-Keys) – NIEMALS einchecken!
+backend/data/config.json
+
+# Laufzeit-/Nutzungsdaten (enthalten teils personenbezogene Daten)
+backend/data/catalog.json
+backend/data/contact_messages.json
+backend/data/plays.json
+backend/data/donate_clicks.json
+backend/data/fingerprints.json
+backend/data/*.json.tmp
+
+# Mitgelieferte Binaries (plattformabhängig, auf Zielsystem installieren)
+backend/bin/fpcalc
+backend/bin/fpcalc.exe
+
+# IDE
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store

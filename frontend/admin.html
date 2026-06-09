@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Riot Music — Admin</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/css/styles.css" />
+  <link rel="stylesheet" href="/css/studio.css" />
+</head>
+<body class="studio-body">
+  <header class="studio-top">
+    <a href="/" class="brand" id="brand-home">
+      <span class="brand-mark">✊</span>
+      <span class="brand-text">Riot<span class="brand-accent">Music</span></span>
+      <span class="studio-badge">Admin</span>
+    </a>
+    <a href="/" class="back-link">← Zur Hörer-Ansicht</a>
+  </header>
+
+  <div class="studio-layout">
+    <!-- Künstler:innen-Liste -->
+    <aside class="studio-side">
+      <button id="btn-new-artist" class="primary-btn full">+ Neue:r Künstler:in</button>
+      <div id="artist-list" class="studio-artist-list"></div>
+    </aside>
+
+    <!-- Editor -->
+    <main class="studio-main" id="studio-main">
+      <div class="studio-placeholder" id="placeholder">
+        <div class="big">🛡️</div>
+        <p>Admin-Verwaltung: alle Künstler:innen, Releases und Songs.<br />Wähle links eine:n aus oder lege eine:n neue:n an.</p>
+      </div>
+    </main>
+  </div>
+
+  <div id="toast" class="toast"></div>
+  <script src="/js/admin.js"></script>
+</body>
+</html>

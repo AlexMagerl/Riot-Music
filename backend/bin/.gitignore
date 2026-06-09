@@ -1,0 +1,5 @@
+# Plattform-spezifische Binaries nicht ins Repo committen.
+# Der bin/-Ordner selbst bleibt versioniert (README.md), aber die Executables
+# werden pro Deployment-Ziel installiert.
+fpcalc
+fpcalc.exe

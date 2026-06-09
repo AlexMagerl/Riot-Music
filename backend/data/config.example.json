@@ -1,0 +1,15 @@
+{
+  "_hinweis": "Vorlage. Auf dem Server zu config.json kopieren und ausfüllen (oder im Admin-Panel setzen). config.json enthält Secrets und gehört NICHT ins Git-Repo.",
+  "admin_email": "",
+  "smtp_host": "",
+  "smtp_port": 587,
+  "smtp_user": "",
+  "smtp_password": "",
+  "smtp_from": "",
+  "smtp_use_tls": true,
+  "smtp_use_ssl": false,
+  "public_base_url": "https://riot-music.eu",
+  "platform_paypal": "",
+  "acoustid_api_key": "",
+  "fingerprint_mode": "strict"
+}
