@@ -36,3 +36,6 @@ backend/bin/fpcalc.exe
 # OS
 Thumbs.db
 .DS_Store
+
+# Claude-Code lokale Konfig
+.claude/
