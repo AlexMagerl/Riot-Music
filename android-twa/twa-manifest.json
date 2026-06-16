@@ -1,0 +1,23 @@
+{
+  "packageId": "eu.riotmusic.app",
+  "host": "riot-music.eu",
+  "name": "Riot Music",
+  "launcherName": "Riot Music",
+  "display": "standalone",
+  "themeColor": "#0e0e10",
+  "themeColorDark": "#0e0e10",
+  "navigationColor": "#0e0e10",
+  "navigationColorDark": "#0e0e10",
+  "backgroundColor": "#0e0e10",
+  "startUrl": "/",
+  "iconUrl": "https://riot-music.eu/icons/icon-512.png",
+  "maskableIconUrl": "https://riot-music.eu/icons/icon-maskable-512.png",
+  "webManifestUrl": "https://riot-music.eu/manifest.json",
+  "fallbackType": "customtabs",
+  "orientation": "default",
+  "enableNotifications": false,
+  "features": {},
+  "shortcuts": [],
+  "appVersionName": "1.0.0",
+  "appVersionCode": 1
+}

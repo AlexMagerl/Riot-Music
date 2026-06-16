@@ -102,6 +102,7 @@ const player = {
     if (t.coverThumb || t.cover) cover.appendChild(el("img", { class: "tile-img", src: t.coverThumb || t.cover, alt: "" }));
     else cover.appendChild(document.createTextNode(initials(t.artistName)));
     this.playCountRecorded = false;  // Reset für neuen Track
+    updateMediaSession(t);           // Sperrbildschirm-Infos aktualisieren
     if (autoplay) audio.play().catch(() => {});
     highlightPlaying();
   },
@@ -212,13 +213,64 @@ function toast(msg) {
   _toastTimer = setTimeout(() => t.classList.remove("show"), 3200);
 }
 
-audio.addEventListener("play", () => { $("#btn-play").textContent = "⏸"; highlightPlaying(); });
-audio.addEventListener("pause", () => { $("#btn-play").textContent = "▶"; highlightPlaying(); });
+audio.addEventListener("play", () => {
+  $("#btn-play").textContent = "⏸"; highlightPlaying();
+  if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "playing";
+});
+audio.addEventListener("pause", () => {
+  $("#btn-play").textContent = "▶"; highlightPlaying();
+  if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "paused";
+});
 audio.addEventListener("ended", () => player.next(true));
 
 audio.addEventListener("loadedmetadata", () => {
   $("#time-dur").textContent = fmtTime(audio.duration);
+  updatePositionState();
 });
+
+/* ---- MediaSession: Sperrbildschirm-Steuerung + Hintergrund-Wiedergabe ----
+   Liefert Titel/Cover an die System-Medienanzeige und verdrahtet die
+   Hardware-/Lockscreen-Tasten. Wichtig für die Android-App (TWA), damit
+   Musik bei gesperrtem Bildschirm steuerbar bleibt. */
+function updateMediaSession(t) {
+  if (!("mediaSession" in navigator) || !t) return;
+  const art = t.cover || t.coverThumb;
+  const artwork = art
+    ? [{ src: new URL(art, location.origin).href, sizes: "512x512", type: "image/jpeg" }]
+    : [];
+  navigator.mediaSession.metadata = new MediaMetadata({
+    title: t.title || "",
+    artist: t.artistName || "",
+    album: t.releaseTitle || "Riot Music",
+    artwork,
+  });
+}
+
+function updatePositionState() {
+  if (!("mediaSession" in navigator) || !("setPositionState" in navigator.mediaSession)) return;
+  if (!isFinite(audio.duration) || audio.duration <= 0) return;
+  try {
+    navigator.mediaSession.setPositionState({
+      duration: audio.duration,
+      position: Math.min(audio.currentTime, audio.duration),
+      playbackRate: audio.playbackRate || 1,
+    });
+  } catch {}
+}
+
+if ("mediaSession" in navigator) {
+  const ms = navigator.mediaSession;
+  ms.setActionHandler("play", () => audio.play().catch(() => {}));
+  ms.setActionHandler("pause", () => audio.pause());
+  ms.setActionHandler("previoustrack", () => player.prev());
+  ms.setActionHandler("nexttrack", () => player.next());
+  try {
+    ms.setActionHandler("seekto", (e) => {
+      if (e.fastSeek && "fastSeek" in audio) { audio.fastSeek(e.seekTime); return; }
+      if (typeof e.seekTime === "number") audio.currentTime = e.seekTime;
+    });
+  } catch {}
+}
 
 const seek = $("#seek");
 let seeking = false;
@@ -235,6 +287,7 @@ audio.addEventListener("timeupdate", () => {
   $("#time-cur").textContent = fmtTime(audio.currentTime);
   seek.style.background =
     `linear-gradient(to right, var(--accent) ${pct / 10}%, var(--border) ${pct / 10}%)`;
+  updatePositionState();
 });
 seek.addEventListener("input", () => { seeking = true; });
 seek.addEventListener("change", () => {
