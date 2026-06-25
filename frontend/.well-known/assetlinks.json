@@ -1,11 +1,14 @@
 [
   {
-    "relation": ["delegate_permission/common.handle_all_urls"],
+    "relation": [
+      "delegate_permission/common.handle_all_urls",
+      "delegate_permission/common.get_login_creds"
+    ],
     "target": {
       "namespace": "android_app",
       "package_name": "eu.riotmusic.app",
       "sha256_cert_fingerprints": [
-        "HIER_SHA256_FINGERPRINT_AUS_DER_PLAY_CONSOLE_EINTRAGEN"
+        "C3:90:13:31:AE:E4:D6:0F:CA:AF:21:58:D0:F7:8D:26:8D:DB:30:6F:34:A0:49:75:87:36:12:3D:76:8C:2F:B9"
       ]
     }
   }
