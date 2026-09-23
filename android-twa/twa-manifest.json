@@ -14,10 +14,10 @@
   "maskableIconUrl": "https://riot-music.eu/icons/icon-maskable-512.png",
   "webManifestUrl": "https://riot-music.eu/manifest.json",
   "fallbackType": "customtabs",
-  "orientation": "default",
+  "orientation": "portrait",
   "enableNotifications": false,
   "features": {},
   "shortcuts": [],
-  "appVersionName": "1.0.0",
-  "appVersionCode": 1
+  "appVersionName": "1.0.1",
+  "appVersionCode": 2
 }

@@ -1084,6 +1084,25 @@ function setActiveNav(route) {
 }
 window.addEventListener("hashchange", router);
 
+/* Handy im Querformat → Hinweis „Bitte hochkant halten“.
+   Querformat = sichtbarer Bereich breiter als hoch. Ausnahme: ein Eingabefeld
+   ist aktiv – dann ist im Hochformat nur die Tastatur offen und macht den
+   sichtbaren Bereich flach. Tablets/Desktop (kürzere Bildschirmseite ≥ 500 px
+   bzw. Maus als Eingabe) sind nicht betroffen. */
+function checkPhoneLandscape() {
+  const isPhone = window.matchMedia("(pointer: coarse)").matches &&
+    Math.min(screen.width, screen.height) < 500;
+  const typing = /^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement || {}).tagName || "");
+  const landscape = window.matchMedia("(orientation: landscape)").matches;
+  document.body.classList.toggle("phone-landscape", isPhone && landscape && !typing);
+}
+window.addEventListener("resize", checkPhoneLandscape);
+window.addEventListener("orientationchange", () => setTimeout(checkPhoneLandscape, 200));
+window.matchMedia("(orientation: landscape)").addEventListener("change", checkPhoneLandscape);
+document.addEventListener("focusin", checkPhoneLandscape);
+document.addEventListener("focusout", () => setTimeout(checkPhoneLandscape, 300));
+checkPhoneLandscape();
+
 /* ==================================================================
    SUCHLEISTE + GENRES
    ================================================================== */

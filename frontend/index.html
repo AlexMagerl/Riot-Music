@@ -55,6 +55,7 @@
     <symbol id="i-megaphone" viewBox="0 0 24 24"><path d="M3 9.5h4l10-5.5v16L7 14.5H3z"/><path d="M6 15.5 7.5 21h3l-1.4-5.5z"/><rect x="19" y="9.5" width="2.5" height="5" rx="1"/></symbol>
     <symbol id="i-mail" viewBox="0 0 24 24"><path d="M2.5 5h19v14h-19z" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/><path d="m3 6 9 7 9-7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/></symbol>
     <symbol id="i-mic" viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="12.5" rx="4"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3.5M8 21.5h8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
+    <symbol id="i-phone" viewBox="0 0 24 24"><path d="M7.5 1.5h9A2.5 2.5 0 0 1 19 4v16a2.5 2.5 0 0 1-2.5 2.5h-9A2.5 2.5 0 0 1 5 20V4a2.5 2.5 0 0 1 2.5-2.5zM8 5v13h8V5z"/><circle cx="12" cy="20.2" r="1.1" fill="var(--icon-cut, #0e0e10)"/></symbol>
     <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 2 4 5v6c0 5 3.4 9.3 8 11 4.6-1.7 8-6 8-11V5z"/></symbol>
   </svg>
 
@@ -135,6 +136,13 @@
       <input id="volume" type="range" min="0" max="100" value="80" />
     </div>
   </footer>
+
+  <!-- Handy im Querformat: Hinweis statt verzogenem Layout (Musik läuft weiter) -->
+  <div class="rotate-hint" role="alert">
+    <svg class="ico rotate-phone" aria-hidden="true"><use href="#i-phone"/></svg>
+    <div class="rotate-title">Bitte hochkant halten</div>
+    <p>Riot Music ist fürs Hochformat gebaut. Die Musik läuft weiter.</p>
+  </div>
 
   <audio id="audio" preload="metadata"></audio>
   <script src="/js/vendor/qrcode.js"></script>
