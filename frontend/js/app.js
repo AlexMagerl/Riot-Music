@@ -38,6 +38,22 @@ const el = (tag, attrs = {}, ...children) => {
   return node;
 };
 
+/* SVG-Icon aus dem Sprite in index.html (<symbol id="i-…">). */
+const SVG_NS = "http://www.w3.org/2000/svg";
+function ico(name, cls = "ico") {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("class", cls);
+  svg.setAttribute("aria-hidden", "true");
+  const use = document.createElementNS(SVG_NS, "use");
+  use.setAttribute("href", `#i-${name}`);
+  svg.appendChild(use);
+  return svg;
+}
+function setIcon(btn, name) {
+  const use = btn && btn.querySelector("use");
+  if (use) use.setAttribute("href", `#i-${name}`);
+}
+
 function fmtTime(sec) {
   if (!isFinite(sec) || sec < 0) sec = 0;
   const m = Math.floor(sec / 60);
@@ -133,10 +149,11 @@ const player = {
   cycleLoop() {
     this.loopMode = this.loopMode === "off" ? "all" : this.loopMode === "all" ? "one" : "off";
     const btn = $("#btn-loop");
-    btn.textContent = this.loopMode === "one" ? "🔂" : "🔁";
+    setIcon(btn, this.loopMode === "one" ? "loop-one" : "loop");
     btn.classList.toggle("active", this.loopMode !== "off");
     btn.title = "Wiederholen: " +
       (this.loopMode === "off" ? "aus" : this.loopMode === "all" ? "alle" : "ein Titel");
+    btn.setAttribute("aria-label", btn.title);
   },
 
   currentTrackId() {
@@ -181,7 +198,7 @@ function showDonateButton(artist) {
   const links = (artist && artist.donations) || [];
   const bank = artist && artist.bank;
   if (!links.length && !bank) { hideDonateButton(); return; }
-  btn.textContent = `♥ Spenden für ${artist.name}`;
+  btn.querySelector(".donate-label").textContent = `Spenden für ${artist.name}`;
   btn.title = `Direkt an ${artist.name} spenden (100% an die Künstler:in)`;
   btn.style.display = "";
   btn.onclick = () => {
@@ -205,7 +222,7 @@ function openDonateDialog(artist, links, bank) {
   const close = () => { overlay.remove(); document.removeEventListener("keydown", onKey); };
   const onKey = (e) => { if (e.key === "Escape") close(); };
   const box = el("div", { class: "modal-box donate-box", role: "dialog", "aria-modal": "true" },
-    el("h3", {}, `♥ Spenden für ${artist.name}`),
+    el("h3", {}, ico("heart", "ico ico-inline"), `Spenden für ${artist.name}`),
     el("p", { class: "donate-note" },
       `Deine Spende geht zu 100 % direkt an ${artist.name}. Riot Music ist daran nicht beteiligt.`));
 
@@ -285,11 +302,13 @@ function toast(msg) {
 }
 
 audio.addEventListener("play", () => {
-  $("#btn-play").textContent = "⏸"; highlightPlaying();
+  setIcon($("#btn-play"), "pause"); $("#btn-play").setAttribute("aria-label", "Pause");
+  document.body.classList.add("is-playing"); highlightPlaying();
   if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "playing";
 });
 audio.addEventListener("pause", () => {
-  $("#btn-play").textContent = "▶"; highlightPlaying();
+  setIcon($("#btn-play"), "play"); $("#btn-play").setAttribute("aria-label", "Abspielen");
+  document.body.classList.remove("is-playing"); highlightPlaying();
   if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "paused";
 });
 audio.addEventListener("ended", () => player.next(true));
@@ -356,8 +375,7 @@ audio.addEventListener("timeupdate", () => {
   const pct = audio.duration ? (audio.currentTime / audio.duration) * 1000 : 0;
   seek.value = pct;
   $("#time-cur").textContent = fmtTime(audio.currentTime);
-  seek.style.background =
-    `linear-gradient(to right, var(--accent) ${pct / 10}%, var(--border) ${pct / 10}%)`;
+  seek.style.setProperty("--pct", `${pct / 10}%`);
   updatePositionState();
 });
 seek.addEventListener("input", () => { seeking = true; });
@@ -371,30 +389,73 @@ audio.volume = volume.value / 100;
 volume.addEventListener("input", () => { audio.volume = volume.value / 100; });
 
 /* ==================================================================
-   WAVEFORM-VISUALIZER
-   Pulsierende Wellenlinien die mit der Musik aufsteigen, ausfaden und
-   zum Boden zurückfallen. Ambient-Farbwechsel. Drei Schichten für Tiefe.
+   VISUALIZER — Block-Equalizer im Riot-Look
+   Balken aus Segmenten mit fallenden Spitzen (wie eine Bühnen-VU-Anzeige).
+   Auf schwache Geräte ausgelegt:
+   - Canvas-Auflösung auf 1,5× gedeckelt (statt bis zu 3× auf Handys)
+   - nur fillRect, Farbverlauf/Muster einmal pro Größenänderung erzeugt
+   - keine Speicher-Allokation pro Frame (feste Float32Arrays)
+   - kommt das Gerät nicht hinterher, wird automatisch auf 30 fps halbiert
+   - bei "Bewegung reduzieren" (Systemeinstellung) aus
    ================================================================== */
 const wave = (() => {
   const canvas = $("#waveform");
   const ctx = canvas.getContext("2d");
-  const POINTS = 80;
-  const LAYERS = 3;
-  let analyser = null;
-  let dataArr = null;
-  let audioCtx = null;
-  let rafId = null;
-  let smoothed = new Array(POINTS).fill(0);
-  let energy = 0;             // Gesamt-Energie (0..1) → steuert globale Sichtbarkeit
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+  const SEG = 6;            // Segmenthöhe inkl. Lücke (px)
+  const SEG_GAP = 2;        // Lücke zwischen Segmenten (px)
+  const TOP = 0.9;          // max. Balkenhöhe relativ zur Playerhöhe
 
-  function resize() {
-    const dpr = window.devicePixelRatio || 1;
-    const r = canvas.parentElement.getBoundingClientRect();
-    canvas.width = r.width * dpr; canvas.height = r.height * dpr;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  let analyser = null, dataArr = null, audioCtx = null;
+  let rafId = null, playing = false;
+  let w = 0, h = 0, bars = 0, step = 0, barW = 0;
+  let levels = new Float32Array(0), peaks = new Float32Array(0);
+  let binFrom = new Uint16Array(0), binTo = new Uint16Array(0);
+  let barFill = null, gapPattern = null;
+  let lastTs = 0, slowFrames = 0, halfRate = false, skipFrame = false;
+
+  function mapBins() {
+    // Frequenzen leicht logarithmisch verteilen: Bass bekommt mehr Balken.
+    const lo = 2, hi = 96;                      // bei fftSize 256 ≈ 350 Hz … 16,5 kHz
+    const at = (i) => lo + (hi - lo) * Math.pow(i / bars, 1.7);
+    binFrom = new Uint16Array(bars);
+    binTo = new Uint16Array(bars);
+    for (let i = 0; i < bars; i++) {
+      const a = Math.floor(at(i));
+      binFrom[i] = a;
+      binTo[i] = Math.max(a + 1, Math.floor(at(i + 1)));
+    }
   }
-  resize();
-  window.addEventListener("resize", resize);
+
+  function layout() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    const r = canvas.getBoundingClientRect();
+    w = r.width; h = r.height;
+    if (!w || !h) return;
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    bars = Math.max(16, Math.min(90, Math.floor(w / (w < 600 ? 8 : 11))));
+    step = w / bars;
+    barW = Math.max(2, step - 3);
+    levels = new Float32Array(bars);
+    peaks = new Float32Array(bars);
+    mapBins();
+
+    barFill = ctx.createLinearGradient(0, h, 0, h * (1 - TOP));
+    barFill.addColorStop(0, "rgba(228,37,43,0.24)");
+    barFill.addColorStop(0.6, "rgba(255,77,82,0.44)");
+    barFill.addColorStop(1, "rgba(255,170,170,0.6)");
+
+    // Querstreifen-Muster, das die Balken in Blöcke „schneidet“.
+    const tile = document.createElement("canvas");
+    tile.width = 1; tile.height = SEG;
+    const tctx = tile.getContext("2d");
+    tctx.fillStyle = "#000";
+    tctx.fillRect(0, 0, 1, SEG_GAP);
+    gapPattern = ctx.createPattern(tile, "repeat");
+  }
 
   function ensureAnalyser() {
     if (analyser) return true;
@@ -405,7 +466,7 @@ const wave = (() => {
       const src = audioCtx.createMediaElementSource(audio);
       analyser = audioCtx.createAnalyser();
       analyser.fftSize = 256;
-      analyser.smoothingTimeConstant = 0.65;
+      analyser.smoothingTimeConstant = 0.6;
       src.connect(analyser);
       analyser.connect(audioCtx.destination);
       dataArr = new Uint8Array(analyser.frequencyBinCount);
@@ -413,148 +474,86 @@ const wave = (() => {
     } catch (e) { analyser = null; return false; }
   }
 
-  // Ambient-Farbpaletten (wechseln langsam)
-  const palettes = [
-    [228,37,43],   // Riot-Rot
-    [120,40,200],  // Violett
-    [0,180,160],   // Türkis
-    [220,120,20],  // Amber
-    [40,100,220],  // Blau
-    [200,50,120],  // Pink
-  ];
-  function ambientRGB(layerOffset) {
-    const cycle = 16000;
-    const t = ((performance.now() + layerOffset * 5000) % (cycle * palettes.length)) / cycle;
-    const idx = Math.floor(t) % palettes.length;
-    const next = (idx + 1) % palettes.length;
-    const f = t - Math.floor(t);
-    const e = f * f * (3 - 2 * f);   // smoothstep
-    return palettes[idx].map((v, i) => Math.round(v + (palettes[next][i] - v) * e));
-  }
-
-  function drawWave(values, layer, globalAlpha) {
-    const w = canvas.clientWidth, h = canvas.clientHeight;
-    if (!w || !h) return;
-    const [cr, cg, cb] = ambientRGB(layer);
-
-    const phase = layer * 1.1 + performance.now() / (2800 + layer * 900);
-    const layerScale = [1.0, 0.7, 0.45][layer] || 0.5;
-
-    ctx.beginPath();
-    ctx.moveTo(0, h);
-    let prevY = h;
-    for (let i = 0; i <= POINTS; i++) {
-      const x = (i / POINTS) * w;
-      const v = values[Math.min(i, POINTS - 1)] || 0;
-      // Sinuswelle nur leicht überlagert — das Hauptsignal kommt von der Musik
-      const ripple = Math.sin(phase + i * 0.18) * 0.04 * v;
-      const amp = v * layerScale + ripple;
-      const y = h - amp * h * 0.85;
-      if (i === 0) { ctx.lineTo(x, y); }
-      else {
-        const prevX = ((i - 1) / POINTS) * w;
-        const cpx = (prevX + x) / 2;
-        ctx.bezierCurveTo(cpx, prevY, cpx, y, x, y);
-      }
-      prevY = y;
-    }
-    ctx.lineTo(w, h);
-    ctx.closePath();
-
-    // Farbe + Opazität hängt an globalAlpha (Energie)
-    const layerAlpha = [0.6, 0.35, 0.18][layer] || 0.3;
-    const alpha = globalAlpha * layerAlpha;
-    const grad = ctx.createLinearGradient(0, h, 0, h * 0.2);
-    grad.addColorStop(0, `rgba(${cr},${cg},${cb},${(alpha * 0.9).toFixed(3)})`);
-    grad.addColorStop(0.6, `rgba(${cr},${cg},${cb},${(alpha * 0.5).toFixed(3)})`);
-    grad.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
-    ctx.fillStyle = grad;
-    ctx.fill();
-  }
-
-  function tick() {
-    rafId = requestAnimationFrame(tick);
-    const w = canvas.clientWidth, h = canvas.clientHeight;
-    ctx.clearRect(0, 0, w, h);
-    if (!w || !h) return;
-
-    const target = new Array(POINTS).fill(0);
-    let rawEnergy = 0;
-
-    if (analyser && !audio.paused) {
-      analyser.getByteFrequencyData(dataArr);
-      const usable = Math.floor(dataArr.length * 0.82);
-      const step = usable / POINTS;
-      for (let i = 0; i < POINTS; i++) {
-        const start = Math.floor(i * step);
-        const end = Math.max(start + 1, Math.floor((i + 1) * step));
+  function update(ts) {
+    const live = playing && analyser;
+    if (live) analyser.getByteFrequencyData(dataArr);
+    let alive = false;
+    for (let i = 0; i < bars; i++) {
+      let target = 0;
+      if (live) {
         let sum = 0;
-        for (let j = start; j < end; j++) sum += dataArr[j];
-        target[i] = (sum / (end - start)) / 255;
-        rawEnergy += target[i];
+        for (let j = binFrom[i]; j < binTo[i]; j++) sum += dataArr[j];
+        target = sum / (binTo[i] - binFrom[i]) / 255;
+        target = target * target * 1.15;          // leise Anteile runter, Punch rauf
+      } else if (playing) {
+        target = 0.2 + 0.14 * Math.sin(ts / 420 + i * 0.35);   // Fallback ohne Web Audio
       }
-      rawEnergy /= POINTS;
-    } else if (!audio.paused) {
-      // Fallback
-      const t = performance.now() / 500;
-      for (let i = 0; i < POINTS; i++) {
-        target[i] = 0.18 + 0.15 * Math.sin(t + i * 0.22);
-        rawEnergy += target[i];
-      }
-      rawEnergy /= POINTS;
+      if (target > 1) target = 1;
+      const lv = levels[i];
+      levels[i] = target > lv ? lv + (target - lv) * 0.6 : lv * 0.86;
+      if (levels[i] < 0.004) levels[i] = 0;
+      if (levels[i] > peaks[i]) peaks[i] = levels[i];
+      else peaks[i] = Math.max(0, peaks[i] - 0.011);
+      if (levels[i] > 0 || peaks[i] > 0) alive = true;
     }
+    return alive;
+  }
 
-    // Werte glätten: schnell hoch (Attack), schnell zurückfallen (Gravity)
-    for (let i = 0; i < POINTS; i++) {
-      if (target[i] > smoothed[i]) {
-        smoothed[i] += (target[i] - smoothed[i]) * 0.55;   // schneller Attack
-      } else {
-        smoothed[i] *= 0.88;                                 // Gravity: fällt zum Boden
-        if (smoothed[i] < 0.005) smoothed[i] = 0;
-      }
+  function draw() {
+    ctx.clearRect(0, 0, w, h);
+    const maxH = h * TOP;
+    ctx.fillStyle = barFill;
+    for (let i = 0; i < bars; i++) {
+      const bh = Math.ceil((levels[i] * maxH) / SEG) * SEG;
+      if (bh > 0) ctx.fillRect(i * step, h - bh, barW, bh);
     }
-
-    // Globale Energie (steuert Opazität) — schnell hoch, sanft ausfaden
-    if (rawEnergy > energy) energy += (rawEnergy - energy) * 0.5;
-    else energy *= 0.92;
-    if (energy < 0.01) energy = 0;
-
-    // Schichten zeichnen (hinten → vorn), Opazität = Energie
-    const alpha = Math.min(1, energy * 2.5);
-    for (let layer = LAYERS - 1; layer >= 0; layer--) {
-      drawWave(smoothed, layer, alpha);
+    // Blöcke ausschneiden
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.fillStyle = gapPattern;
+    ctx.fillRect(0, 0, w, h);
+    ctx.globalCompositeOperation = "source-over";
+    // Fallende Spitzen
+    ctx.fillStyle = "rgba(255,255,255,0.65)";
+    for (let i = 0; i < bars; i++) {
+      if (peaks[i] > 0.02) ctx.fillRect(i * step, h - peaks[i] * maxH - 3, barW, 3);
     }
   }
+
+  function tick(ts) {
+    rafId = requestAnimationFrame(tick);
+    // Gerät zu langsam? Dann nur noch jedes zweite Bild zeichnen (30 fps).
+    if (lastTs) {
+      const dt = ts - lastTs;
+      if (dt > 26) slowFrames++;
+      else if (slowFrames > 0) slowFrames--;
+      if (slowFrames > 30) halfRate = true;
+    }
+    lastTs = ts;
+    if (halfRate && (skipFrame = !skipFrame)) return;
+
+    if (!w) layout();
+    const alive = update(ts);
+    draw();
+    if (!playing && !alive) {           // ausgeklungen → Schleife beenden
+      cancelAnimationFrame(rafId); rafId = null; lastTs = 0;
+      ctx.clearRect(0, 0, w, h);
+    }
+  }
+
+  if ("ResizeObserver" in window) new ResizeObserver(layout).observe(canvas.parentElement);
+  else window.addEventListener("resize", layout);
 
   return {
     start() {
+      if (reduceMotion.matches) return;
+      playing = true;
       ensureAnalyser();
       if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
-      resize();
       canvas.classList.add("active");
-      if (!rafId) tick();
+      if (!rafId) rafId = requestAnimationFrame(tick);
     },
     stop() {
-      canvas.classList.remove("active");
-      // Auslauf-Animation: Wellen fallen sanft zum Boden
-      let fadeFrames = 0;
-      function fadeOut() {
-        if (fadeFrames++ > 40) {
-          cancelAnimationFrame(rafId); rafId = null;
-          ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
-          smoothed = smoothed.map(() => 0); energy = 0;
-          return;
-        }
-        for (let i = 0; i < POINTS; i++) { smoothed[i] *= 0.85; if (smoothed[i] < 0.005) smoothed[i] = 0; }
-        energy *= 0.88;
-        const w2 = canvas.clientWidth, h2 = canvas.clientHeight;
-        ctx.clearRect(0, 0, w2, h2);
-        const alpha = Math.min(1, energy * 2.5);
-        for (let layer = LAYERS - 1; layer >= 0; layer--) drawWave(smoothed, layer, alpha);
-        rafId = requestAnimationFrame(fadeOut);
-      }
-      if (rafId) { cancelAnimationFrame(rafId); }
-      fadeOut();
+      playing = false;                  // Balken fallen, dann endet die Schleife
     },
   };
 })();
@@ -579,7 +578,7 @@ function trackRow(track, idx, queue) {
   const row = el("div", { class: "track", "data-track-id": track.id, onclick: () => player.setQueue(queue, idx) },
     el("div", { class: "track-idx" },
       el("span", { class: "num" }, String(idx + 1)),
-      el("span", { class: "play-ico" }, "▶")),
+      el("span", { class: "play-ico" }, ico("play"))),
     el("div", {},
       el("div", { class: "track-title" }, track.title),
       el("div", { class: "track-sub" },
@@ -609,7 +608,7 @@ async function renderHome() {
     hero.appendChild(el("button", { class: "hero-donate-btn",
       title: "Hilf mit, Riot Music werbefrei und unabhängig zu halten",
       onclick: () => { trackDonateClick(""); window.open(state.platform.donateUrl, "_blank", "noopener"); } },
-      "♥ Plattform unterstützen"));
+      ico("heart"), "Plattform unterstützen"));
   }
   view.appendChild(hero);
 
@@ -808,8 +807,9 @@ async function renderArtist(id) {
         cover.appendChild(document.createTextNode(initials(track.releaseTitle)));
       }
       const playBtn = el("button", { class: "play-overlay",
-        onclick: () => player.setQueue(allTracks, allTracks.findIndex((t) => t.id === track.id)) },
-        "▶");
+        onclick: () => player.setQueue(allTracks, allTracks.findIndex((t) => t.id === track.id)),
+        "aria-label": `${track.title} abspielen` },
+        ico("play"));
       cover.appendChild(playBtn);
       card.appendChild(cover);
       card.appendChild(el("div", { class: "track-info" },
@@ -845,7 +845,7 @@ async function renderArtist(id) {
         el("h3", {}, release.title),
         el("div", { class: "sub" },
           `${release.type}${release.genre ? " · " + release.genre : ""} · ${release.year} · ${release.tracks.length} Songs`)),
-      el("button", { class: "play-all", onclick: () => player.setQueue(allTracks, offset) }, "▶ Alle abspielen")));
+      el("button", { class: "play-all", onclick: () => player.setQueue(allTracks, offset) }, ico("play"), "Alle abspielen")));
 
     const list = el("div", { class: "tracklist" });
     release.tracks.forEach((track) => {

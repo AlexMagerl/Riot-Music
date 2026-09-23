@@ -1,0 +1,280 @@
+/* Riot Music — „Riot“-Designschicht über styles.css.
+   Protestplakat/Punk-Flyer: kräftige schmale Versalien (Anton), harte
+   versetzte Schatten statt weicher Glows, schräge Sticker, Warnstreifen.
+   Performance: nur statische Effekte; animiert werden ausschließlich
+   transform/opacity (GPU-freundlich). Keine Blur-Filter. */
+
+@font-face {
+  font-family: "Anton";
+  src: url("/fonts/anton-latin.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --display: "Anton", Impact, "Haettenschweiler", "Arial Narrow Bold", sans-serif;
+  --ink: #050506;              /* Schatten-/Druckfarbe */
+  --blood: #7a0d11;            /* dunkles Rot für harte Schatten */
+  --radius: 6px;
+  --player-h: 96px;
+  --icon-cut: #0e0e10;
+}
+
+/* ---------- Grund: dezentes Druckraster ---------- */
+body {
+  background-color: var(--bg);
+  background-image: radial-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1.2px);
+  background-size: 5px 5px;
+}
+::selection { background: var(--accent); color: #fff; }
+
+/* ---------- Icons ---------- */
+.icon-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+.ico { width: 1.1em; height: 1.1em; fill: currentColor; flex-shrink: 0; vertical-align: -0.15em; }
+.ico-inline { margin-right: 8px; color: var(--accent); }
+
+/* ---------- Überschriften: Plakat-Versalien ---------- */
+.hero h1, .artist-head h1, .section-title, .contact-page h1,
+.manifest h1, .manifest h2, .modal-box h3, .brand-text {
+  font-family: var(--display);
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+/* ---------- Seitenleiste / Logo ---------- */
+.sidebar {
+  background: linear-gradient(180deg, #121214 0%, #09090a 100%);
+  border-right: 2px solid #000;
+}
+.brand { font-size: 1.7rem; gap: 10px; }
+.brand-mark {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 38px; height: 38px; background: var(--accent); color: var(--ink);
+  --icon-cut: var(--accent);
+  border-radius: 4px; transform: rotate(-6deg);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+.brand-fist { width: 26px; height: 26px; }
+.brand:hover .brand-mark { transform: rotate(0deg) scale(1.06); }
+.brand-mark { transition: transform 0.15s; }
+
+.nav-link {
+  display: flex; align-items: center; gap: 10px;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  font-size: 0.84rem; font-weight: 800;
+  border-radius: 3px;
+}
+.nav-link .ico { width: 17px; height: 17px; opacity: 0.8; }
+.nav-link:hover { background: var(--bg-elev); color: #fff; }
+.nav-link.active {
+  background: var(--accent); color: #fff;
+  clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
+}
+.nav-link.active .ico { opacity: 1; }
+.nav-studio { color: var(--accent-soft); }
+
+/* ---------- Kopfzeile, Suche, Buttons ---------- */
+.topbar { background: rgba(10, 10, 11, 0.94); backdrop-filter: none; border-bottom: 2px solid #000; }
+.search input[type="search"], .search-genre {
+  border-radius: 4px; border: 2px solid var(--border); background: #111113;
+}
+.search input[type="search"]:focus { border-color: var(--accent); }
+
+/* Gemeinsamer „Sticker“-Button: harte Kante, versetzter Schatten */
+.search-btn, .radio-btn, .hero-donate-btn, .donate-btn {
+  font-family: var(--display); font-weight: 400;
+  text-transform: uppercase; letter-spacing: 0.05em;
+  border-radius: 4px;
+  box-shadow: 4px 4px 0 var(--ink);
+  transition: transform 0.12s, box-shadow 0.12s, background 0.15s, color 0.15s;
+}
+.search-btn:hover, .radio-btn:hover, .hero-donate-btn:hover, .donate-btn:hover {
+  transform: translate(-2px, -2px); box-shadow: 6px 6px 0 var(--ink);
+}
+.search-btn:active, .radio-btn:active, .hero-donate-btn:active, .donate-btn:active {
+  transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--ink);
+}
+.search-btn { font-size: 1rem; }
+.radio-btn { font-size: 1.02rem; transform: rotate(-2deg); }
+.radio-btn:hover { transform: rotate(-2deg) translate(-2px, -2px); }
+.radio-btn .ico { width: 20px; height: 20px; }
+.donate-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: #fff; color: var(--accent); border: none; font-size: 1rem;
+  transform: rotate(1.5deg);
+}
+.donate-btn:hover { background: var(--accent); color: #fff; transform: rotate(1.5deg) translate(-2px, -2px); }
+.donate-btn .ico { width: 18px; height: 18px; }
+.hero-donate-btn { font-size: 1.15rem; padding: 14px 26px; }
+.hero-donate-btn .ico { width: 20px; height: 20px; }
+.radio-dot { display: none; }
+.radio-btn .ico { animation: radio-wave 1.8s ease-in-out infinite; }
+@keyframes radio-wave { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+
+/* ---------- Startseite ---------- */
+.hero {
+  position: relative; overflow: hidden;
+  border: 2px solid #000; border-radius: var(--radius);
+  background:
+    repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.025) 0 2px, transparent 2px 11px),
+    radial-gradient(90% 120% at 100% 0%, rgba(228, 37, 43, 0.45) 0%, transparent 60%),
+    #121214;
+  box-shadow: 8px 8px 0 var(--blood);
+  padding: 46px 42px;
+}
+.hero h1 {
+  font-size: clamp(2.8rem, 7vw, 5.2rem); line-height: 0.95; margin: 0 0 18px;
+  color: #fff; text-shadow: 4px 4px 0 var(--accent);
+}
+.hero p { color: #d4d4d8; font-size: 1.08rem; }
+/* Gesprühte Parole als Sticker in der Ecke */
+.hero::after {
+  content: "Musik gehört den Menschen";
+  position: absolute; top: 20px; right: -34px;
+  font-family: var(--display); text-transform: uppercase; letter-spacing: 0.06em;
+  font-size: 0.8rem; color: var(--ink); background: var(--accent-soft);
+  padding: 6px 44px; transform: rotate(8deg);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+.section-title { font-size: 1.9rem; gap: 12px; margin-bottom: 20px; }
+.section-title::before {
+  content: ""; width: 12px; height: 0.9em; background: var(--accent);
+  transform: skewX(-16deg); flex-shrink: 0;
+}
+.section-title .count {
+  font-family: system-ui, sans-serif; font-size: 0.8rem; font-weight: 800;
+  color: var(--ink); background: var(--text-dim); padding: 2px 8px; border-radius: 3px;
+  letter-spacing: 0;
+}
+
+/* ---------- Karten ---------- */
+.card {
+  border: 2px solid #000; border-radius: var(--radius); background: #151517;
+  transition: transform 0.12s, box-shadow 0.12s, background 0.15s;
+}
+.card:hover {
+  transform: translate(-4px, -4px) rotate(-0.6deg);
+  box-shadow: 7px 7px 0 var(--accent); background: #1a1a1d; border-color: #000;
+}
+.card-art { border-radius: 3px; font-family: var(--display); font-weight: 400; font-size: 3rem; }
+.card-title { font-family: var(--display); font-weight: 400; font-size: 1.25rem; text-transform: uppercase; letter-spacing: 0.02em; }
+.tag {
+  border-radius: 2px; text-transform: uppercase; letter-spacing: 0.05em;
+  font-weight: 800; font-size: 0.66rem; background: #0b0b0c; border-color: #333;
+}
+
+/* ---------- Künstlerprofil ---------- */
+.artist-head h1 { font-size: clamp(2.6rem, 6vw, 4.6rem); line-height: 0.95; text-shadow: 4px 4px 0 var(--accent); }
+.artist-avatar { border: 4px solid #fff; box-shadow: 6px 6px 0 var(--accent); transform: rotate(-3deg); }
+
+/* Titelliste */
+.track { border-radius: 3px; border-left: 3px solid transparent; }
+.track:hover { background: #18181b; border-left-color: var(--accent); }
+.track.playing { background: rgba(228, 37, 43, 0.12); border-left-color: var(--accent); }
+.track.playing .track-title { color: var(--accent-soft); }
+.track-idx .play-ico .ico { width: 14px; height: 14px; }
+
+/* ---------- Player ---------- */
+.player {
+  background: #09090a;
+  border-top: none;
+  box-shadow: 0 -2px 0 #000;
+}
+/* Warnstreifen-Kante oben */
+.player::before {
+  content: ""; position: absolute; left: 0; right: 0; top: -6px; height: 6px; z-index: 3;
+  background: repeating-linear-gradient(-45deg, var(--accent) 0 10px, #000 10px 20px);
+}
+.player-cover {
+  border-radius: 3px; border: 2px solid #fff; transform: rotate(-3deg);
+  box-shadow: 4px 4px 0 var(--accent); color: var(--accent); background: #151517;
+  --icon-cut: #151517;
+  font-family: var(--display); font-weight: 400; font-size: 1.6rem;
+}
+.cover-fist { width: 30px; height: 30px; }
+.player-title {
+  font-family: var(--display); font-weight: 400; font-size: 1.15rem;
+  text-transform: uppercase; letter-spacing: 0.03em;
+}
+.player-artist { text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.72rem; font-weight: 800; }
+
+.player-controls { gap: 14px; }
+.ctrl {
+  width: 40px; height: 40px; display: inline-flex; align-items: center; justify-content: center;
+  color: #e4e4e7; opacity: 1; border-radius: 4px;
+  transition: color 0.12s, transform 0.12s, background 0.12s;
+}
+.ctrl .ico { width: 20px; height: 20px; }
+.ctrl:hover { color: #fff; background: #1c1c1f; transform: translateY(-1px); }
+.ctrl-loop { color: var(--text-faint); opacity: 1; }
+.ctrl-loop.active { color: var(--accent-soft); }
+.ctrl-play {
+  width: 54px; height: 54px; border-radius: 6px;
+  background: var(--accent); color: #fff;
+  box-shadow: 4px 4px 0 var(--ink);
+  transform: rotate(-4deg);
+}
+.ctrl-play .ico { width: 24px; height: 24px; }
+.ctrl-play:hover { background: var(--accent-soft); transform: rotate(0deg) scale(1.05); color: #fff; }
+.ctrl-play:active { transform: rotate(0deg) scale(0.95); }
+body.is-playing .ctrl-play { transform: rotate(3deg); }
+body.is-playing .ctrl-play:hover { transform: rotate(0deg) scale(1.05); }
+
+.time { font-family: var(--display); font-size: 0.8rem; color: var(--text-dim); letter-spacing: 0.04em; }
+
+/* Regler: breite, kantige Spur mit eckigem Griff */
+input[type="range"] { height: 6px; border-radius: 0; background: #2a2a30; }
+input[type="range"]::-webkit-slider-thumb {
+  width: 14px; height: 18px; border-radius: 2px; background: #fff;
+  box-shadow: 2px 2px 0 var(--accent);
+}
+input[type="range"]::-moz-range-thumb {
+  width: 14px; height: 18px; border-radius: 2px; background: #fff;
+  box-shadow: 2px 2px 0 var(--accent);
+}
+#seek { background: linear-gradient(to right, var(--accent) var(--pct, 0%), #2a2a30 var(--pct, 0%)); }
+.vol-icon { color: var(--text-dim); display: inline-flex; }
+.vol-icon .ico { width: 20px; height: 20px; }
+
+/* ---------- Dialoge ---------- */
+.modal-box { border: 2px solid #000; border-radius: var(--radius); box-shadow: 8px 8px 0 var(--accent); }
+.modal-overlay { backdrop-filter: none; background: rgba(0, 0, 0, 0.72); }
+.donate-option { border-radius: 4px; font-family: var(--display); font-weight: 400; text-transform: uppercase; letter-spacing: 0.05em; font-size: 1rem; }
+.donate-option:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+/* ---------- Handy ---------- */
+@media (max-width: 760px) {
+  .brand { font-size: 1.3rem; }
+  .brand-mark { width: 30px; height: 30px; box-shadow: 2px 2px 0 var(--ink); }
+  .brand-fist { width: 20px; height: 20px; }
+  .nav-link { font-size: 0.74rem; gap: 6px; padding: 7px 12px; clip-path: none; }
+  .nav-link .ico { width: 14px; height: 14px; }
+  .nav-link.active { border-radius: 3px; }
+  .hero { padding: 34px 22px 28px; box-shadow: 5px 5px 0 var(--blood); }
+  .hero::after { font-size: 0.66rem; top: 12px; right: -40px; padding: 4px 44px; }
+  .section-title { font-size: 1.5rem; }
+  .player-title { font-size: 1rem; }
+  .ctrl { width: 36px; height: 36px; }
+  .ctrl-play { width: 48px; height: 48px; }
+}
+
+/* Systemeinstellung „Bewegung reduzieren“: keine Dreh-/Pulsanimationen */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}
+
+/* ---------- Abspiel-Buttons in Releases & Beliebte Songs ---------- */
+.play-all {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--display); font-weight: 400; text-transform: uppercase; letter-spacing: 0.05em;
+  border-radius: 4px; box-shadow: 3px 3px 0 var(--ink);
+  transition: transform 0.12s, box-shadow 0.12s, background 0.15s;
+}
+.play-all:hover { transform: translate(-2px, -2px); box-shadow: 5px 5px 0 var(--ink); }
+.play-all .ico { width: 15px; height: 15px; }
+.release-info h3 { font-family: var(--display); font-weight: 400; text-transform: uppercase; letter-spacing: 0.03em; font-size: 1.4rem; }
+.play-overlay .ico { width: 24px; height: 24px; }
+.track-cover { border-radius: 3px; }
