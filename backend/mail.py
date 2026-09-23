@@ -47,7 +47,7 @@ def _send(to_addr: str, subject: str, body: str,
 
     port = int(cfg.get("smtp_port") or 587)
     user = cfg.get("smtp_user") or ""
-    password = cfg.get("smtp_password") or ""
+    password = "".join((cfg.get("smtp_password") or "").split())
     use_ssl = bool(cfg.get("smtp_use_ssl"))
     use_tls = bool(cfg.get("smtp_use_tls", True))
 

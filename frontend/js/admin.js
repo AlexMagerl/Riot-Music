@@ -662,7 +662,7 @@ async function showSettings() {
 
   function field(label, name, type, value, opts = {}) {
     const input = el("input", {
-      name, type, value: value ?? "", autocomplete: "off",
+      name, type, value: value ?? "", autocomplete: opts.autocomplete || "off",
       ...(opts.placeholder ? { placeholder: opts.placeholder } : {}),
     });
     return el("div", { class: "field" },
@@ -701,9 +701,14 @@ async function showSettings() {
 
   form.appendChild(field("SMTP-Benutzer", "smtp_user", "text", cfg.smtp_user,
     { placeholder: "meistens identisch mit der E-Mail" }));
-  form.appendChild(field("SMTP-Passwort", "smtp_password", "password",
-    cfg.smtp_password,
-    { hint: "Maske '********' bedeutet: Passwort ist gespeichert. Leerlassen = unverändert übernehmen." }));
+  // Feld bewusst leer lassen: sonst hält man die Maske für das alte Passwort,
+  // und "new-password" verhindert, dass der Browser ein altes Passwort einsetzt.
+  const pwStored = !!cfg.smtp_password;
+  form.appendChild(field("SMTP-Passwort", "smtp_password", "password", "",
+    { autocomplete: "new-password",
+      placeholder: pwStored ? "Passwort ist gespeichert" : "noch kein Passwort gespeichert",
+      hint: "Nur ausfüllen, um das Passwort zu ändern. Leer lassen = unverändert. " +
+            "Leerzeichen (z. B. im Gmail-App-Passwort) werden automatisch entfernt." }));
   form.appendChild(field("Absender (From-Adresse)", "smtp_from", "email",
     cfg.smtp_from, { placeholder: "wird oft gleich zur Admin-Adresse" }));
 

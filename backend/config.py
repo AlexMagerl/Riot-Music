@@ -147,8 +147,10 @@ def save(updates: dict) -> dict:
         val = updates[key]
         if key == "smtp_password":
             # Maske oder leerer String? -> nicht überschreiben.
-            if val == PASSWORD_MASK or val is None:
+            if val == PASSWORD_MASK or not val:
                 continue
+            # Gmail zeigt App-Passwörter in 4er-Blöcken mit Leerzeichen an.
+            val = "".join(str(val).split())
         if key == "smtp_port":
             try: val = int(val)
             except (TypeError, ValueError): val = 587
