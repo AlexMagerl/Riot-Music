@@ -443,10 +443,13 @@ const wave = (() => {
     peaks = new Float32Array(bars);
     mapBins();
 
+    // Farbe folgt der Akzentfarbe der Seite (Künstler:innen können sie wählen).
+    const rgb = getComputedStyle(document.documentElement)
+      .getPropertyValue("--accent-rgb").trim() || "228,37,43";
     barFill = ctx.createLinearGradient(0, h, 0, h * (1 - TOP));
-    barFill.addColorStop(0, "rgba(228,37,43,0.24)");
-    barFill.addColorStop(0.6, "rgba(255,77,82,0.44)");
-    barFill.addColorStop(1, "rgba(255,170,170,0.6)");
+    barFill.addColorStop(0, `rgba(${rgb},0.24)`);
+    barFill.addColorStop(0.6, `rgba(${rgb},0.44)`);
+    barFill.addColorStop(1, `rgba(${rgb},0.62)`);
 
     // Querstreifen-Muster, das die Balken in Blöcke „schneidet“.
     const tile = document.createElement("canvas");
@@ -555,6 +558,7 @@ const wave = (() => {
     stop() {
       playing = false;                  // Balken fallen, dann endet die Schleife
     },
+    recolor: layout,                    // nach Wechsel der Akzentfarbe
   };
 })();
 
@@ -774,6 +778,8 @@ async function renderArtist(id) {
 
   // Spenden-Button einblenden, sofern PayPal hinterlegt ist.
   showDonateButton(artist);
+  // Eigene Farbe der/des Künstler:in für die ganze Seite übernehmen.
+  setAccent(artist.accentColor);
 
   view.innerHTML = "";
   const head = el("div", { class: "artist-head" });
@@ -1044,6 +1050,8 @@ async function router() {
   // Spenden-Button standardmäßig ausblenden – renderArtist blendet ihn bei
   // hinterlegter PayPal-Adresse wieder ein.
   hideDonateButton();
+  // Außerhalb von Künstlerseiten gilt das Plattform-Rot.
+  if (parts[0] !== "artist") setAccent("");
 
   try {
     if (!parts.length) return await renderHome();
@@ -1059,6 +1067,15 @@ async function router() {
     view.innerHTML = "";
     view.appendChild(emptyState("Fehler beim Laden: " + err.message));
   }
+}
+
+let currentAccent = "";
+function setAccent(hex) {
+  hex = hex || "";
+  if (hex === currentAccent) return;
+  currentAccent = hex;
+  RiotAccent.apply(hex);
+  wave.recolor();
 }
 
 function setActiveNav(route) {

@@ -390,3 +390,43 @@
   .payout-field .social-edit-row { flex-wrap: wrap; }
   .donation-label { width: 100%; }
 }
+
+/* Farbwahl für die Künstlerseite */
+.accent-picker { display: flex; flex-direction: column; gap: 12px; }
+.accent-swatches { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.accent-swatch {
+  width: 36px; height: 36px; border-radius: 6px; border: 2px solid #000; cursor: pointer;
+  box-shadow: 2px 2px 0 #000; font-size: 0.62rem; font-weight: 800; color: #fff;
+  transition: transform 0.12s;
+}
+.accent-swatch:hover { transform: translate(-1px, -1px); }
+.accent-swatch.active { outline: 3px solid #fff; outline-offset: 2px; }
+.accent-custom-wrap {
+  display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  font-size: 0.82rem; color: var(--text-dim); margin-left: 4px;
+}
+.accent-custom { width: 36px; height: 36px; padding: 0; border: 2px solid #000; border-radius: 6px; background: none; cursor: pointer; }
+.accent-preview {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
+  background: #121214; border: 2px solid #000; border-radius: 6px; padding: 16px;
+  box-shadow: 5px 5px 0 var(--blood);
+}
+.accent-preview-name {
+  flex: 1 1 100%; font-size: 1.7rem; font-weight: 900; text-transform: uppercase;
+  color: #fff; text-shadow: 3px 3px 0 var(--accent); letter-spacing: 0.02em;
+}
+.accent-preview-btn, .accent-preview-donate {
+  padding: 8px 16px; border-radius: 4px; font-weight: 800; text-transform: uppercase;
+  font-size: 0.85rem; box-shadow: 3px 3px 0 #000;
+}
+.accent-preview-btn { background: var(--accent); color: var(--on-accent, #fff); }
+.accent-preview-donate { background: #fff; color: var(--accent-ink, var(--accent)); }
+.accent-preview-bar {
+  flex: 1 1 120px; height: 22px; align-self: flex-end;
+  background: repeating-linear-gradient(90deg, var(--accent) 0 6px, transparent 6px 9px);
+  -webkit-mask-image: linear-gradient(to right, #000 0 30%, rgba(0,0,0,.5) 60%, rgba(0,0,0,.25));
+  mask-image: linear-gradient(to right, #000 0 30%, rgba(0,0,0,.5) 60%, rgba(0,0,0,.25));
+}
+.accent-custom::-webkit-color-swatch-wrapper { padding: 0; }
+.accent-custom::-webkit-color-swatch { border: none; border-radius: 4px; }
+.accent-custom::-moz-color-swatch { border: none; border-radius: 4px; }

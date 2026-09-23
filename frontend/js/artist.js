@@ -411,6 +411,47 @@ function bannerField(currentUrl) {
   return wrap;
 }
 
+/* Farbwahl für die eigene Künstlerseite: Vorschläge, freie Farbe, Live-Vorschau.
+   Der Wert landet im versteckten Feld "accentColor" ("" = Standard-Rot). */
+function accentPicker(a) {
+  const hidden = el("input", { type: "hidden", name: "accentColor", value: a.accentColor || "" });
+  const note = el("div", { class: "image-hint" });
+  const preview = el("div", { class: "accent-preview" },
+    el("div", { class: "accent-preview-name" }, a.name || "Dein Name"),
+    el("span", { class: "accent-preview-btn" }, "Abspielen"),
+    el("span", { class: "accent-preview-donate" }, "♥ Spenden"),
+    el("div", { class: "accent-preview-bar" }));
+  const custom = el("input", { type: "color", class: "accent-custom",
+    value: a.accentColor || RiotAccent.DEFAULT, title: "Eigene Farbe wählen" });
+  const swatches = el("div", { class: "accent-swatches" });
+
+  function choose(hex) {
+    const normalized = hex ? RiotAccent.normalize(hex) : "";
+    hidden.value = normalized;
+    RiotAccent.apply(normalized || RiotAccent.DEFAULT, preview);
+    custom.value = normalized || RiotAccent.DEFAULT;
+    swatches.querySelectorAll(".accent-swatch").forEach((b) =>
+      b.classList.toggle("active", (b.dataset.color || "") === normalized));
+    note.textContent = hex && normalized && normalized !== hex.toLowerCase()
+      ? "Die Farbe wurde leicht angepasst, damit alles gut lesbar bleibt."
+      : "Wird auf deiner Profilseite für Buttons, Player und Akzente verwendet.";
+  }
+
+  swatches.appendChild(el("button", { type: "button", class: "accent-swatch", "data-color": "",
+    style: `background:${RiotAccent.DEFAULT}`, title: "Standard (Riot-Rot)",
+    onclick: () => choose("") }, "Std"));
+  RiotAccent.PRESETS.slice(1).forEach(([label, hex]) => {
+    const norm = RiotAccent.normalize(hex);
+    swatches.appendChild(el("button", { type: "button", class: "accent-swatch", "data-color": norm,
+      style: `background:${norm}`, title: label, "aria-label": label, onclick: () => choose(norm) }));
+  });
+  custom.addEventListener("input", () => choose(custom.value));
+  swatches.appendChild(el("label", { class: "accent-custom-wrap", title: "Eigene Farbe" }, custom, "Eigene"));
+
+  choose(a.accentColor || "");
+  return el("div", { class: "accent-picker" }, swatches, preview, note, hidden);
+}
+
 /* „Testen ↗“: öffnet den eingetragenen Spendenlink in einem neuen Tab. */
 function testButton(getUrl) {
   return el("button", { type: "button", class: "ghost-btn small", onclick: (e) => {
@@ -480,6 +521,9 @@ function renderProfilePanel(a) {
               "aria-label": label })))),
       el("div", { class: "image-hint" },
         "Pro Netzwerk ein Link. Es werden nur Adressen der jeweiligen Plattform akzeptiert.")),
+    el("div", { class: "field" },
+      el("label", {}, "Farbe deiner Künstlerseite"),
+      accentPicker(a)),
     el("div", { class: "field" }, el("label", {}, "Deine Genres (aus deinen Releases)"),
       el("div", { class: "genre-summary" }, genreSummary)),
     el("div", { class: "field payout-field" },

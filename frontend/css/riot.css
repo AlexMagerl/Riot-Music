@@ -278,3 +278,12 @@ input[type="range"]::-moz-range-thumb {
 .release-info h3 { font-family: var(--display); font-weight: 400; text-transform: uppercase; letter-spacing: 0.03em; font-size: 1.4rem; }
 .play-overlay .ico { width: 24px; height: 24px; }
 .track-cover { border-radius: 3px; }
+
+/* ---------- Akzentfarbe (pro Künstlerseite wählbar, siehe js/accent.js) ---------- */
+:root { --on-accent: #fff; --accent-ink: #e4252b; --accent-rgb: 228, 37, 43; }
+.donate-btn { color: var(--accent-ink); }
+.search-btn, .radio-btn, .hero-donate-btn, .play-all, .ctrl-play, .ctrl-play:hover,
+.nav-link.active, .donate-btn:hover, .donate-option:hover, .play-overlay { color: var(--on-accent); }
+::selection { color: var(--on-accent); }
+.track.playing { background: rgba(var(--accent-rgb), 0.12); }
+.artist-head { background-color: var(--bg); background-image: linear-gradient(180deg, rgba(var(--accent-rgb), 0.16) 0%, var(--bg) 100%); }

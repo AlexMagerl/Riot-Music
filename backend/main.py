@@ -37,6 +37,7 @@ import ratelimit
 import social
 import stats
 import store
+import theme
 import video
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -157,6 +158,7 @@ def artist_summary(artist: dict) -> dict:
         "banner": _media_url(artist["id"], artist.get("banner")),
         "releaseCount": len(artist["releases"]),
         "trackCount": sum(len(r["tracks"]) for r in artist["releases"]),
+        "accentColor": artist.get("accentColor") or "",   # "" = Plattform-Rot
     }
 
 
@@ -1388,6 +1390,7 @@ def studio_update_artist(
     socialJson: str | None = Form(None),
     donationLinksJson: str | None = Form(None),
     bankJson: str | None = Form(None),
+    accentColor: str | None = Form(None),
     image: UploadFile | None = File(None),
     banner: UploadFile | None = File(None),
 ):
@@ -1424,6 +1427,11 @@ def studio_update_artist(
         raise HTTPException(status_code=400, detail="Ungültige Spendenangaben (JSON).")
     except donations.InvalidDonationError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    if accentColor is not None:
+        try:
+            fields["accentColor"] = theme.normalize(accentColor)
+        except theme.InvalidColorError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
     if image is not None and image.filename:
         res = _save_image(artist["id"], "artist", image)
         fields["image"] = res["image"]
