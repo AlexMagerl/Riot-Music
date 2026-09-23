@@ -166,7 +166,8 @@ def update_artist(artist_id: str, **fields) -> dict | None:
         artist = find_artist(artist_id)
         if not artist:
             return None
-        for key in ("name", "location", "bio", "image", "imageThumb", "banner", "paypal", "videoUrls", "social"):
+        for key in ("name", "location", "bio", "image", "imageThumb", "banner", "paypal", "videoUrls", "social",
+                    "donationLinks", "bank"):
             if key in fields and fields[key] is not None:
                 artist[key] = fields[key]
         save()

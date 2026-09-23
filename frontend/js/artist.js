@@ -411,6 +411,29 @@ function bannerField(currentUrl) {
   return wrap;
 }
 
+/* „Testen ↗“: öffnet den eingetragenen Spendenlink in einem neuen Tab. */
+function testButton(getUrl) {
+  return el("button", { type: "button", class: "ghost-btn small", onclick: (e) => {
+    e.preventDefault();
+    let url = (getUrl() || "").trim();
+    if (!url) { toast("Erst einen Link eintragen.", "error"); return; }
+    if (!/^https?:\/\//i.test(url)) url = "https://" + url;
+    window.open(url, "_blank", "noopener");
+  } }, "Testen ↗");
+}
+
+/* Gleiche Logik wie _donate_url im Backend: E-Mail, Link oder paypal.me-Handle. */
+function paypalTestUrl(value) {
+  const v = (value || "").trim();
+  if (!v) return "";
+  if (/paypal\.(me|com)/i.test(v)) return v;
+  if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) {
+    return "https://www.paypal.com/cgi-bin/webscr?cmd=_donations&currency_code=EUR&business=" +
+      encodeURIComponent(v);
+  }
+  return "https://www.paypal.me/" + v.replace(/^@/, "");
+}
+
 /* Plattform-Definitionen: [key, Icon, Label, Platzhalter] */
 const SOCIAL_PLATFORMS = [
   ["website",    "🌐", "Website",      "https://deine-seite.de"],
@@ -460,13 +483,32 @@ function renderProfilePanel(a) {
     el("div", { class: "field" }, el("label", {}, "Deine Genres (aus deinen Releases)"),
       el("div", { class: "genre-summary" }, genreSummary)),
     el("div", { class: "field payout-field" },
-      el("label", {}, "PayPal für Spenden (E-Mail oder PayPal.me-Link)"),
-      el("input", { name: "paypal", type: "text", value: a.paypal || "",
-        placeholder: "z. B. paypal.me/deinname oder deine@email.de" }),
-      el("div", { class: "image-hint" },
-        "Sobald du etwas einträgst, erscheint auf deinem Profil ein „♥ Spenden“-Button. " +
-        "Spenden gehen zu 100% direkt an dich. Tipp: Ein PayPal.me-Link schützt deine " +
-        "E-Mail-Adresse besser als die direkte E-Mail. Feld leer lassen = kein Spenden-Button.")),
+      el("label", {}, "Spenden an dich (alles optional)"),
+      el("div", { class: "image-hint", style: "margin-bottom:10px" },
+        "Sobald du mindestens einen Weg einträgst, erscheint auf deinem Profil ein " +
+        "„♥ Spenden“-Button. Spenden gehen zu 100 % direkt an dich. " +
+        "Prüf jeden Link nach dem Eintragen mit „Testen ↗“."),
+      el("div", { class: "social-edit-row" },
+        el("span", { class: "donation-label" }, "PayPal"),
+        el("input", { name: "paypal", type: "text", class: "social-input-plain",
+          value: a.paypal || "", placeholder: "paypal.me/deinname oder deine@email.de" }),
+        testButton(() => paypalTestUrl($("input[name=paypal]", form).value))),
+      el("div", { class: "social-edit-grid", id: "donation-links" }, "Lade Anbieter …"),
+      el("div", { class: "bank-edit" },
+        el("div", { class: "donation-subhead" }, "Überweisung (IBAN)"),
+        el("div", { class: "image-hint" },
+          "⚠ Wenn du hier etwas einträgst, sind Name und IBAN auf deinem Profil " +
+          "öffentlich sichtbar. Dafür zahlt niemand Gebühren. Die IBAN wird beim " +
+          "Speichern auf Tippfehler geprüft."),
+        el("div", { class: "social-edit-row" },
+          el("span", { class: "donation-label" }, "Kontoinhaber:in"),
+          el("input", { name: "bankHolder", type: "text", class: "social-input-plain",
+            value: (a.bank && a.bank.holder) || "", maxlength: 70 })),
+        el("div", { class: "social-edit-row" },
+          el("span", { class: "donation-label" }, "IBAN"),
+          el("input", { name: "bankIban", type: "text", class: "social-input-plain",
+            value: (a.bank && a.bank.iban) || "", placeholder: "DE00 0000 0000 0000 0000 00",
+            autocomplete: "off" })))),
     el("div", { class: "btn-row" },
       el("button", { type: "submit", class: "primary-btn" }, "Profil speichern")),
     el("div", { class: "btn-row", style: "margin-top:30px;border-top:1px solid var(--border);padding-top:20px;" },
@@ -481,6 +523,22 @@ function renderProfilePanel(a) {
   if (a.videoUrls && Array.isArray(a.videoUrls)) {
     a.videoUrls.forEach((url) => addVideoField(videosList, url));
   }
+
+  // Spenden-Anbieter nachladen und je eine Zeile mit Test-Button bauen
+  const donationBox = $("#donation-links", form);
+  fetch("/api/donation-providers").then((r) => r.json()).then((providers) => {
+    donationBox.replaceChildren(...providers.map((p) => {
+      const input = el("input", { type: "text", class: "donation-input social-input-plain",
+        "data-provider": p.key, value: (a.donationLinks && a.donationLinks[p.key]) || "",
+        placeholder: p.example, "aria-label": p.label });
+      return el("div", { class: "social-edit-row" },
+        el("span", { class: "donation-label" }, p.label), input,
+        testButton(() => input.value));
+    }));
+    donationBox.dataset.ready = "1";
+  }).catch(() => {
+    donationBox.textContent = "Anbieter konnten nicht geladen werden – bitte Seite neu laden.";
+  });
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -500,6 +558,22 @@ function renderProfilePanel(a) {
       if (v) socialObj[inp.dataset.platform] = v;
     });
     fd.set("socialJson", JSON.stringify(socialObj));
+
+    // Spendenwege sammeln (nur wenn die Anbieter-Liste geladen ist – sonst
+    // würden gespeicherte Links versehentlich gelöscht).
+    const donationBox = $("#donation-links", form);
+    if (donationBox.dataset.ready) {
+      const links = {};
+      form.querySelectorAll(".donation-input").forEach((inp) => {
+        const v = inp.value.trim();
+        if (v) links[inp.dataset.provider] = v;
+      });
+      fd.set("donationLinksJson", JSON.stringify(links));
+    }
+    fd.set("bankJson", JSON.stringify({
+      holder: fd.get("bankHolder") || "", iban: fd.get("bankIban") || "" }));
+    fd.delete("bankHolder");
+    fd.delete("bankIban");
 
     try {
       state.artist = await apiSend("PUT", "/api/studio/artist", fd);

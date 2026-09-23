@@ -178,11 +178,82 @@ function hideDonateButton() {
 function showDonateButton(artist) {
   const btn = $("#btn-donate");
   if (!btn) return;
-  if (!artist || !artist.donateUrl) { hideDonateButton(); return; }
+  const links = (artist && artist.donations) || [];
+  const bank = artist && artist.bank;
+  if (!links.length && !bank) { hideDonateButton(); return; }
   btn.textContent = `♥ Spenden für ${artist.name}`;
-  btn.title = `Direkt an ${artist.name} spenden (100% via PayPal)`;
+  btn.title = `Direkt an ${artist.name} spenden (100% an die Künstler:in)`;
   btn.style.display = "";
-  btn.onclick = () => { trackDonateClick(artist.id); window.open(artist.donateUrl, "_blank", "noopener"); };
+  btn.onclick = () => {
+    // Nur ein Weg: direkt öffnen. Mehrere: Auswahl anzeigen.
+    if (links.length === 1 && !bank) {
+      trackDonateClick(artist.id);
+      window.open(links[0].url, "_blank", "noopener");
+      return;
+    }
+    openDonateDialog(artist, links, bank);
+  };
+}
+
+/* EPC-QR ("GiroCode"): von fast allen Banking-Apps lesbare Überweisungsdaten. */
+function epcPayload(bank) {
+  return ["BCD", "002", "1", "SCT", "", bank.holder, bank.iban, "", "", "",
+          "Spende via Riot Music"].join("\n");
+}
+
+function openDonateDialog(artist, links, bank) {
+  const close = () => { overlay.remove(); document.removeEventListener("keydown", onKey); };
+  const onKey = (e) => { if (e.key === "Escape") close(); };
+  const box = el("div", { class: "modal-box donate-box", role: "dialog", "aria-modal": "true" },
+    el("h3", {}, `♥ Spenden für ${artist.name}`),
+    el("p", { class: "donate-note" },
+      `Deine Spende geht zu 100 % direkt an ${artist.name}. Riot Music ist daran nicht beteiligt.`));
+
+  if (links.length) {
+    box.appendChild(el("div", { class: "donate-options" },
+      links.map((l) => el("button", { type: "button", class: "donate-option",
+        onclick: () => { trackDonateClick(artist.id); window.open(l.url, "_blank", "noopener"); } },
+        `${l.label} ↗`))));
+  }
+
+  if (bank) {
+    const ibanPretty = bank.iban.replace(/(.{4})/g, "$1 ").trim();
+    const copy = (text, what) => {
+      navigator.clipboard.writeText(text).then(
+        () => { copyStatus.textContent = `✓ ${what} kopiert`; trackDonateClick(artist.id); },
+        () => { copyStatus.textContent = "Kopieren nicht möglich – bitte markieren."; });
+    };
+    const copyStatus = el("div", { class: "donate-copy-status" });
+    let qrSvg = "";
+    try {
+      qrcode.stringToBytes = qrcode.stringToBytesFuncs["UTF-8"];
+      const qr = qrcode(0, "M");
+      qr.addData(epcPayload(bank), "Byte");
+      qr.make();
+      qrSvg = qr.createSvgTag(4, 2);
+    } catch { /* ohne QR-Code geht es auch */ }
+    box.appendChild(el("div", { class: "bank-box" },
+      el("div", { class: "bank-title" }, "Per Überweisung"),
+      el("div", { class: "bank-row" }, el("span", {}, "Empfänger:in"), el("strong", {}, bank.holder)),
+      el("div", { class: "bank-row" }, el("span", {}, "IBAN"),
+        el("code", { class: "iban" }, ibanPretty),
+        el("button", { type: "button", class: "ghost-btn small",
+          onclick: () => copy(bank.iban, "IBAN") }, "Kopieren")),
+      el("div", { class: "bank-row" }, el("span", {}, "Verwendungszweck"),
+        el("em", {}, "Spende via Riot Music")),
+      copyStatus,
+      qrSvg
+        ? el("div", { class: "qr-wrap" }, el("div", { class: "qr-box", html: qrSvg }),
+            el("div", { class: "donate-note" }, "Mit der Banking-App scannen (GiroCode)."))
+        : null));
+  }
+
+  box.appendChild(el("div", { class: "btn-row" },
+    el("button", { type: "button", class: "ghost-btn", onclick: close }, "Schließen")));
+  const overlay = el("div", { class: "modal-overlay",
+    onclick: (e) => { if (e.target === overlay) close(); } }, box);
+  document.addEventListener("keydown", onKey);
+  document.body.appendChild(overlay);
 }
 
 // Beim Laden zunächst ausblenden (Startseite hat keinen Künstlerkontext).

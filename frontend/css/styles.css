@@ -761,3 +761,32 @@ input[type="range"]::-moz-range-thumb {
   .search-btn { flex: 0 0 auto; padding: 10px 22px; }
   .view { padding: 20px 16px; }
 }
+
+/* Spenden-Dialog (mehrere Spendenwege + Überweisung) */
+.donate-box { max-width: 480px; max-height: calc(100vh - 40px); overflow-y: auto; }
+.donate-note { color: var(--text-dim); font-size: 0.88rem; margin: 0 0 14px; }
+.donate-options { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+.donate-option {
+  flex: 1 1 140px; background: var(--bg-elev); color: var(--text);
+  border: 1px solid var(--border); border-radius: 999px; padding: 10px 16px;
+  font-weight: 700; cursor: pointer; transition: border-color 0.15s, color 0.15s;
+}
+.donate-option:hover { border-color: var(--accent); color: var(--accent-soft); }
+.bank-box { border-top: 1px solid var(--border); padding-top: 14px; }
+.bank-title { font-weight: 700; margin-bottom: 10px; }
+.bank-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;
+  margin-bottom: 8px; font-size: 0.92rem;
+}
+.bank-row > span:first-child { color: var(--text-dim); min-width: 130px; }
+.bank-row .iban { font-size: 0.95rem; word-break: break-all; }
+.donate-copy-status { color: #6cd28a; font-size: 0.85rem; min-height: 1.2em; }
+.qr-wrap { display: flex; flex-direction: column; align-items: center; margin-top: 10px; }
+.qr-box { background: #fff; padding: 6px; border-radius: 8px; line-height: 0; }
+.qr-box svg { width: 180px; height: 180px; }
+.donate-box .ghost-btn {
+  background: var(--bg-elev); color: var(--text); border: 1px solid var(--border);
+  border-radius: 999px; padding: 8px 16px; font-weight: 600; cursor: pointer;
+}
+.donate-box .ghost-btn.small { padding: 5px 12px; font-size: 0.82rem; }
+.donate-box .ghost-btn:hover { border-color: var(--accent); }

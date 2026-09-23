@@ -28,6 +28,7 @@ import auth
 import captcha
 import config
 import contact
+import donations
 import fingerprint
 import images
 import mail
@@ -100,6 +101,15 @@ def _donate_url(paypal: str | None, artist_name: str) -> str | None:
     if "/" in handle or " " in handle:
         return None
     return f"https://www.paypal.me/{handle}"
+
+
+def _artist_donations(artist: dict) -> list[dict]:
+    """Alle Spendenlinks einer:s Künstler:in, PayPal zuerst."""
+    out = []
+    paypal_url = _donate_url(artist.get("paypal"), artist["name"])
+    if paypal_url:
+        out.append({"provider": "paypal", "label": "PayPal", "url": paypal_url})
+    return out + donations.public_links(artist.get("donationLinks"))
 
 
 def enrich_track(artist: dict, release: dict, track: dict) -> dict:
@@ -181,12 +191,16 @@ def artist_full(artist: dict, include_private: bool = False) -> dict:
         "social": artist.get("social", {}),
         "topTracks": top_tracks,
         "releases": [enrich_release(artist, r) for r in artist["releases"]],
-        # Öffentlicher Spendenlink (nur falls PayPal hinterlegt) – die rohe
-        # Adresse selbst wird nicht ausgeliefert, nur die fertige URL.
+        # Öffentliche Spendenlinks – die rohe PayPal-Angabe selbst wird nicht
+        # ausgeliefert, nur die fertige URL.
         "donateUrl": _donate_url(artist.get("paypal"), artist["name"]),
+        "donations": _artist_donations(artist),
+        # Bankverbindung nur, wenn die:der Künstler:in sie selbst eingetragen hat.
+        "bank": artist.get("bank") or None,
     }
     if include_private:
         out["paypal"] = artist.get("paypal", "")
+        out["donationLinks"] = artist.get("donationLinks", {})
     return out
 
 
@@ -202,6 +216,12 @@ def get_platform():
     # Rohe Adresse nie ausliefern – nur die fertige URL.
     plat.pop("paypal", None)
     return plat
+
+
+@app.get("/api/donation-providers")
+def get_donation_providers():
+    """Erlaubte Spendenanbieter für den Profil-Editor."""
+    return donations.provider_catalog()
 
 
 @app.get("/api/genres")
@@ -1123,7 +1143,7 @@ def admin_overview(_admin: dict = Depends(require_admin)):
             "plays": a_plays,
             "tracks": a_tracks,
             "donateClicks": stats.artist_count(artist["id"]),
-            "hasDonate": bool(_donate_url(artist.get("paypal"), artist["name"])),
+            "hasDonate": bool(_artist_donations(artist) or artist.get("bank")),
             "public": _artist_public(artist["id"]),
         })
     artists_out.sort(key=lambda a: a["plays"], reverse=True)
@@ -1366,6 +1386,8 @@ def studio_update_artist(
     paypal: str | None = Form(None),
     videoUrlsJson: str | None = Form(None),
     socialJson: str | None = Form(None),
+    donationLinksJson: str | None = Form(None),
+    bankJson: str | None = Form(None),
     image: UploadFile | None = File(None),
     banner: UploadFile | None = File(None),
 ):
@@ -1393,6 +1415,15 @@ def studio_update_artist(
             raise HTTPException(status_code=400, detail="Ungültige Social-Links (JSON).")
         except social.InvalidSocialURLError as exc:
             raise HTTPException(status_code=400, detail=f"Ungültiger Link: {exc}")
+    try:
+        if donationLinksJson is not None and donationLinksJson.strip():
+            fields["donationLinks"] = donations.normalize_links(json.loads(donationLinksJson))
+        if bankJson is not None and bankJson.strip():
+            fields["bank"] = donations.normalize_bank(json.loads(bankJson))
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Ungültige Spendenangaben (JSON).")
+    except donations.InvalidDonationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     if image is not None and image.filename:
         res = _save_image(artist["id"], "artist", image)
         fields["image"] = res["image"]

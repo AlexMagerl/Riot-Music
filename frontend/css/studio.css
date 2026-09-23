@@ -379,3 +379,14 @@
   .upload-cols { grid-template-columns: 1fr; }
   .artist-edit-head { flex-direction: column; align-items: center; }
 }
+
+/* Spendenwege im Profil-Editor */
+.payout-field .social-edit-row { margin-bottom: 8px; }
+.donation-label { width: 130px; flex-shrink: 0; font-size: 0.88rem; color: var(--text-dim); font-weight: 600; }
+.social-input-plain { flex: 1; min-width: 0; }
+.donation-subhead { font-weight: 700; margin: 16px 0 4px; }
+.bank-edit { margin-top: 6px; }
+@media (max-width: 560px) {
+  .payout-field .social-edit-row { flex-wrap: wrap; }
+  .donation-label { width: 100%; }
+}
