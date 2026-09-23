@@ -51,6 +51,8 @@ ALLOWED_AUDIO_CT = {"audio/mpeg", "audio/mp3"}
 
 VERIFY_TTL = 60 * 60 * 48          # E-Mail-Bestätigungslink: 48 Stunden gültig
 UNVERIFIED_MAX_AGE = 60 * 60 * 24 * 7   # unbestätigte Accounts nach 7 Tagen löschbar
+PENDING_APPROVAL_MSG = ("Dein Konto wartet noch auf die Freischaltung durch uns. "
+                        "Du bekommst eine E-Mail, sobald es so weit ist.")
 
 app = FastAPI(title="Riot Music API", version="0.3.0")
 
@@ -209,14 +211,14 @@ def get_genres():
 
 def _artist_public(artist_id: str) -> bool:
     """
-    Ist ein Künstlerprofil öffentlich sichtbar? Sichtbar, solange der zugehörige
-    Account E-Mail-bestätigt ist. Profile ohne Account (z. B. Seed-Daten) bleiben
-    sichtbar.
+    Ist ein Künstlerprofil öffentlich sichtbar? Erst wenn der zugehörige Account
+    E-Mail-bestätigt UND vom Admin freigegeben ist. Profile ohne Account
+    (z. B. Seed-Daten) bleiben sichtbar.
     """
     user = accounts.find_by_artist(artist_id)
     if user is None:
         return True
-    return accounts.is_verified(user)
+    return accounts.is_active(user)
 
 
 @app.get("/api/artists")
@@ -305,6 +307,8 @@ def current_user(rm_session: str | None = Cookie(default=None)) -> dict | None:
 def require_artist(user: dict | None = Depends(current_user)) -> dict:
     if not user:
         raise HTTPException(status_code=401, detail="Bitte zuerst anmelden.")
+    if not accounts.is_active(user):
+        raise HTTPException(status_code=403, detail=PENDING_APPROVAL_MSG)
     artist = store.find_artist(user["artistId"])
     if not artist:
         raise HTTPException(status_code=404, detail="Künstlerprofil nicht gefunden.")
@@ -627,8 +631,24 @@ def _wav_duration(path: Path) -> int:
 # ---------------------------------------------------------------------------
 @app.get("/api/auth/captcha")
 def get_captcha():
-    """Liefert eine frische Mathe-Challenge für die Registrierung."""
-    return captcha.create_challenge()
+    """Liefert das aktive Captcha: Friendly-Sitekey oder eine Mathe-Challenge."""
+    return captcha.public_challenge()
+
+
+CAPTCHA_FAILED_MSG = ("Anti-Bot-Prüfung fehlgeschlagen oder abgelaufen. "
+                      "Bitte warte, bis sie abgeschlossen ist, und versuch es erneut.")
+
+
+def _purge_artist(artist_id: str) -> None:
+    """Entfernt Profil, Konto, Fingerprints und Mediendateien einer:s Künstler:in."""
+    if not artist_id:
+        return
+    fingerprint.unregister_artist(artist_id)
+    store.delete_artist(artist_id)
+    accounts.delete_by_artist(artist_id)
+    folder = (MEDIA_DIR / artist_id).resolve()
+    if str(folder).startswith(str(MEDIA_DIR.resolve())) and folder.is_dir():
+        shutil.rmtree(folder, ignore_errors=True)
 
 
 def _antibot_guard(request: Request, website: str, captcha_id: str, captcha_answer: str) -> str:
@@ -641,8 +661,8 @@ def _antibot_guard(request: Request, website: str, captcha_id: str, captcha_answ
         raise HTTPException(status_code=429,
                             detail="Zu viele Registrierungen von dieser Adresse. "
                                    "Bitte später erneut versuchen.")
-    if not captcha.verify(captcha_id, captcha_answer):
-        raise HTTPException(status_code=400, detail="Captcha falsch oder abgelaufen.")
+    if not captcha.check(captcha_id, captcha_answer):
+        raise HTTPException(status_code=400, detail=CAPTCHA_FAILED_MSG)
     return ip
 
 
@@ -693,12 +713,12 @@ def register(
         raise HTTPException(status_code=400, detail="Künstlername ist Pflicht.")
 
     # Double-Opt-In nur, wenn überhaupt E-Mails versendet werden können.
-    # Ohne SMTP würde sich der Account sonst dauerhaft selbst aussperren.
+    # Freischalten muss der Admin das Konto in jedem Fall (Kuratierung).
     require_verification = mail.can_send()
 
     artist = store.add_artist(name=artistName)
     user = accounts.add_user(email, auth.hash_password(password), artist["id"],
-                             verified=not require_verification)
+                             verified=not require_verification, approved=False)
     # Akzeptanz protokollieren (für Audit / Streit).
     try:
         from datetime import datetime, timezone
@@ -710,26 +730,24 @@ def register(
     ratelimit.record_registration(ip)
 
     if require_verification:
-        sent = _send_verification(request, email, artistName.strip())
-        if not sent:
-            # Versand fehlgeschlagen (z. B. SMTP-Fehler): Account dennoch anlegen,
-            # aber sofort freischalten, damit niemand hängen bleibt.
-            accounts.set_verified(email)
-            _set_session(response, email)
-            return {"email": email,
-                    "artist": artist_full(store.find_artist(artist["id"]), include_private=True),
-                    "verificationMailFailed": True}
-        # Kein Session-Cookie – erst nach Bestätigung einloggbar.
-        return {"pending": True, "email": email}
+        if not _send_verification(request, email, artistName.strip()):
+            # Versand fehlgeschlagen: Konto wieder entfernen statt es ungeprüft
+            # freizuschalten. So kann sich die Person später erneut registrieren.
+            _purge_artist(artist["id"])
+            raise HTTPException(
+                status_code=503,
+                detail="Die Bestätigungs-E-Mail konnte gerade nicht verschickt werden. "
+                       "Bitte versuch es später noch einmal.",
+            )
+        # Kein Session-Cookie – erst nach Bestätigung und Freigabe einloggbar.
+        return {"pending": True, "stage": "email", "email": email}
 
-    # Kein SMTP: wie bisher direkt einloggen.
-    _set_session(response, email)
-    return {"email": email,
-            "artist": artist_full(store.find_artist(artist["id"]), include_private=True)}
+    # Kein SMTP: keine Mail-Bestätigung möglich, der Admin prüft direkt.
+    return {"pending": True, "stage": "approval", "email": email}
 
 
 @app.get("/api/auth/verify")
-def verify_email(token: str, response: Response):
+def verify_email(token: str, request: Request, response: Response):
     """Bestätigt eine E-Mail über den Link aus der Double-Opt-In-Mail."""
     email = auth.read_action_token(token, "verify")
     page = _verify_result_page  # HTML-Helfer unten
@@ -743,18 +761,33 @@ def verify_email(token: str, response: Response):
         return Response(content=page(ok=False,
                         msg="Zu diesem Link existiert kein Konto mehr."),
                         media_type="text/html", status_code=404)
+    already_verified = accounts.is_verified(user)
     accounts.set_verified(email)
-    # Direkt einloggen – bequemer Übergang in den Editor.
-    _set_session(response, email)
-    return Response(content=page(ok=True,
-                    msg="Deine E-Mail wurde bestätigt. Dein Profil ist jetzt aktiv."),
+    if accounts.is_approved(user):
+        # Direkt einloggen – bequemer Übergang in den Editor.
+        _set_session(response, email)
+        return Response(content=page(ok=True,
+                        msg="Deine E-Mail wurde bestätigt. Dein Profil ist jetzt aktiv."),
+                        media_type="text/html")
+    if not already_verified:
+        artist = store.find_artist(user.get("artistId", ""))
+        name = artist["name"] if artist else "(ohne Namen)"
+        mail.send_admin_notice(
+            f"Neue Anmeldung: {name}",
+            f"{name} <{email}> hat die E-Mail-Adresse bestätigt und wartet auf "
+            f"deine Freigabe.\n\nZur Freigabe: {_base_url(request)}/admin.html "
+            f"(Bereich „Wartende Konten“)\n")
+    return Response(content=page(ok=True, cta=False,
+                    msg="Danke, deine E-Mail-Adresse ist bestätigt! Wir schauen uns "
+                        "jede Anmeldung persönlich an. Sobald dein Konto freigeschaltet "
+                        "ist, bekommst du eine E-Mail und kannst loslegen."),
                     media_type="text/html")
 
 
-def _verify_result_page(ok: bool, msg: str) -> str:
+def _verify_result_page(ok: bool, msg: str, cta: bool = True) -> str:
     icon = "✅" if ok else "⚠️"
     color = "#6cd28a" if ok else "#ff6b6f"
-    cta = ('<a href="/artist.html" style="display:inline-block;margin-top:22px;'
+    cta = "" if not cta else ('<a href="/artist.html" style="display:inline-block;margin-top:22px;'
            'background:#e4252b;color:#fff;padding:12px 24px;border-radius:999px;'
            'font-weight:700;text-decoration:none">Zum Künstlerbereich →</a>') if ok else \
           ('<a href="/artist.html" style="display:inline-block;margin-top:22px;'
@@ -840,6 +873,9 @@ def login(request: Request, response: Response,
             detail="Bitte bestätige zuerst deine E-Mail-Adresse. "
                    "Schau in dein Postfach (auch im Spam-Ordner).",
         )
+    if not accounts.is_approved(user):
+        ratelimit.record_success(ip)
+        raise HTTPException(status_code=403, detail=PENDING_APPROVAL_MSG)
     ratelimit.record_success(ip)
     _set_session(response, user["email"])
     result = {"email": user["email"], "role": user.get("role", "artist")}
@@ -856,7 +892,8 @@ def logout(response: Response):
 
 @app.get("/api/auth/me")
 def whoami(user: dict | None = Depends(current_user)):
-    if not user:
+    # Nicht (mehr) aktive Konten gelten als abgemeldet – z. B. alte Sitzungen.
+    if not user or not accounts.is_active(user):
         return {"authenticated": False}
     artist = store.find_artist(user.get("artistId", "")) if user.get("artistId") else None
     return {"authenticated": True, "email": user["email"],
@@ -940,8 +977,8 @@ def submit_contact_message(
         )
 
     # 3) Captcha (single-use)
-    if not captcha.verify(captchaId, captchaAnswer):
-        raise HTTPException(status_code=400, detail="Captcha falsch oder abgelaufen.")
+    if not captcha.check(captchaId, captchaAnswer):
+        raise HTTPException(status_code=400, detail=CAPTCHA_FAILED_MSG)
 
     # 4) E-Mail-Format
     email_clean = email.strip().lower()
@@ -1108,11 +1145,11 @@ def admin_overview(_admin: dict = Depends(require_admin)):
 
 @app.get("/api/admin/unverified")
 def admin_list_unverified(_admin: dict = Depends(require_admin)):
-    """Listet unbestätigte (Double-Opt-In offen) Künstler-Accounts."""
+    """Listet Konten, bei denen E-Mail-Bestätigung oder Admin-Freigabe fehlt."""
     import time as _t
     now = _t.time()
     out = []
-    for u in accounts.list_unverified():
+    for u in accounts.list_pending():
         artist = store.find_artist(u.get("artistId", ""))
         out.append({
             "email": u["email"],
@@ -1120,6 +1157,8 @@ def admin_list_unverified(_admin: dict = Depends(require_admin)):
             "artistName": artist["name"] if artist else "(Profil fehlt)",
             "createdAt": u.get("createdAt", 0),
             "ageHours": round((now - u.get("createdAt", now)) / 3600, 1),
+            "emailVerified": accounts.is_verified(u),
+            "registeredIp": u.get("agbAcceptedIp", ""),
         })
     out.sort(key=lambda x: x["createdAt"])
     return {"unverified": out, "count": len(out),
@@ -1127,27 +1166,27 @@ def admin_list_unverified(_admin: dict = Depends(require_admin)):
 
 
 @app.post("/api/admin/unverified/{email}/verify")
-def admin_verify_user(email: str, _admin: dict = Depends(require_admin)):
-    """Schaltet ein Konto manuell frei (z. B. wenn die Mail nicht ankam)."""
-    if not accounts.set_verified(email):
+def admin_verify_user(email: str, request: Request,
+                      _admin: dict = Depends(require_admin)):
+    """Gibt ein Konto frei und benachrichtigt die:den Künstler:in per Mail."""
+    user = accounts.set_approved(email)
+    if not user:
         raise HTTPException(status_code=404, detail="Konto nicht gefunden")
-    return {"ok": True}
+    mailed = False
+    if mail.can_send():
+        artist = store.find_artist(user.get("artistId", ""))
+        mailed = mail.send_approved(user["email"], f"{_base_url(request)}/artist.html",
+                                    artist["name"] if artist else "")
+    return {"ok": True, "mailed": mailed}
 
 
 @app.delete("/api/admin/unverified/{email}")
 def admin_delete_unverified(email: str, _admin: dict = Depends(require_admin)):
-    """Löscht ein einzelnes unbestätigtes Konto samt Profil."""
+    """Lehnt ein wartendes Konto ab: löscht es samt Profil."""
     user = accounts.find_user(email)
-    if not user or accounts.is_verified(user):
-        raise HTTPException(status_code=404, detail="Kein unbestätigtes Konto.")
-    artist_id = user.get("artistId")
-    if artist_id:
-        fingerprint.unregister_artist(artist_id)
-        store.delete_artist(artist_id)
-        folder = (MEDIA_DIR / artist_id).resolve()
-        if str(folder).startswith(str(MEDIA_DIR.resolve())) and folder.is_dir():
-            shutil.rmtree(folder, ignore_errors=True)
-    accounts.delete_by_artist(artist_id) if artist_id else None
+    if not user or accounts.is_active(user):
+        raise HTTPException(status_code=404, detail="Kein wartendes Konto.")
+    _purge_artist(user.get("artistId", ""))
     return {"ok": True}
 
 
@@ -1156,11 +1195,7 @@ def admin_prune_unverified(_admin: dict = Depends(require_admin)):
     """Räumt alle unbestätigten Konten auf, die älter als 7 Tage sind."""
     artist_ids = accounts.prune_unverified(UNVERIFIED_MAX_AGE)
     for artist_id in artist_ids:
-        fingerprint.unregister_artist(artist_id)
-        store.delete_artist(artist_id)
-        folder = (MEDIA_DIR / artist_id).resolve()
-        if str(folder).startswith(str(MEDIA_DIR.resolve())) and folder.is_dir():
-            shutil.rmtree(folder, ignore_errors=True)
+        _purge_artist(artist_id)
     return {"ok": True, "removed": len(artist_ids)}
 
 

@@ -63,7 +63,8 @@ def find_by_artist(artist_id: str) -> dict | None:
 
 
 def add_user(email: str, password_hash: str, artist_id: str,
-             role: str = "artist", verified: bool = True) -> dict:
+             role: str = "artist", verified: bool = True,
+             approved: bool = True) -> dict:
     with _lock:
         user = {
             "email": email.strip().lower(),
@@ -73,6 +74,8 @@ def add_user(email: str, password_hash: str, artist_id: str,
             "createdAt": int(time.time()),
             "verified": bool(verified),
             "verifiedAt": int(time.time()) if verified else None,
+            "approved": bool(approved),
+            "approvedAt": int(time.time()) if approved else None,
         }
         data()["users"].append(user)
         save()
@@ -103,9 +106,43 @@ def set_verified(email: str) -> dict | None:
         return user
 
 
-def list_unverified() -> list[dict]:
+def is_approved(user: dict | None) -> bool:
+    """
+    Hat der Admin das Konto freigegeben? Fehlt das Flag (Alt-Accounts von vor der
+    Kuratierung), gilt es als freigegeben. Admins sind immer freigegeben.
+    """
+    if not user:
+        return False
+    if user.get("role") == "admin":
+        return True
+    return user.get("approved", True)
+
+
+def is_active(user: dict | None) -> bool:
+    """E-Mail bestätigt UND vom Admin freigegeben – erst dann darf das Konto etwas."""
+    return is_verified(user) and is_approved(user)
+
+
+def set_approved(email: str) -> dict | None:
+    """Admin-Freigabe (setzt zugleich die E-Mail als bestätigt)."""
+    with _lock:
+        user = find_user(email)
+        if not user:
+            return None
+        now = int(time.time())
+        if not user.get("verified", True):
+            user["verified"] = True
+            user["verifiedAt"] = now
+        user["approved"] = True
+        user["approvedAt"] = now
+        save()
+        return user
+
+
+def list_pending() -> list[dict]:
+    """Konten, bei denen E-Mail-Bestätigung oder Admin-Freigabe noch fehlt."""
     return [u for u in data()["users"]
-            if u.get("role") != "admin" and not u.get("verified", True)]
+            if u.get("role") != "admin" and not is_active(u)]
 
 
 def prune_unverified(older_than_seconds: int) -> list[str]:

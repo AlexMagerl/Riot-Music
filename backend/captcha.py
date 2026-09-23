@@ -1,16 +1,31 @@
 """
-Einfaches Mathe-Captcha für die Registrierung — gegen Bot-Schwemme.
+Captcha für Registrierung und Kontaktformular — gegen Bot-Schwemme.
 
-Stateless aus Sicht der Clients (ID + Antwort), serverseitig in einem In-Memory-Store
-mit kurzer Lebensdauer. Challenges sind single-use: einmal verifiziert (egal ob
-korrekt oder falsch) wird sie entfernt.
+Sind im Admin-Bereich Sitekey und API-Key von Friendly Captcha hinterlegt,
+wird dessen Proof-of-Work-Widget genutzt (serverseitige Prüfung über die
+siteverify-API). Andernfalls greift das eingebaute Mathe-Captcha.
+
+Mathe-Captcha: Stateless aus Sicht der Clients (ID + Antwort), serverseitig in
+einem In-Memory-Store mit kurzer Lebensdauer. Challenges sind single-use:
+einmal verifiziert (egal ob korrekt oder falsch) wird sie entfernt.
 """
 from __future__ import annotations
 
+import json
+import logging
 import random
 import secrets
 import threading
 import time
+import urllib.error
+import urllib.request
+
+import config
+
+log = logging.getLogger("riotmusic.captcha")
+
+FRC_VERIFY_URL = "https://global.frcapi.com/api/v2/captcha/siteverify"
+FRC_ID = "frc"               # captchaId, mit dem das Frontend Friendly-Antworten markiert
 
 TTL_SECONDS = 600           # 10 Minuten
 MAX_STORED = 10_000         # Schutz gegen unbegrenztes Wachstum
@@ -62,3 +77,57 @@ def verify(cid: str | None, answer: str | None) -> bool:
         return int(str(answer).strip()) == expected
     except (TypeError, ValueError):
         return False
+
+
+# ---------------------------------------------------------------------------
+# Friendly Captcha
+# ---------------------------------------------------------------------------
+def _friendly_keys() -> tuple[str, str] | None:
+    cfg = config.load()
+    sitekey = (cfg.get("frc_sitekey") or "").strip()
+    api_key = (cfg.get("frc_api_key") or "").strip()
+    return (sitekey, api_key) if sitekey and api_key else None
+
+
+def public_challenge() -> dict:
+    """Was das Frontend zum Anzeigen braucht: Friendly-Sitekey oder Mathe-Frage."""
+    keys = _friendly_keys()
+    if keys:
+        return {"provider": "friendly", "sitekey": keys[0]}
+    return {"provider": "math", **create_challenge()}
+
+
+def _verify_friendly(response: str, sitekey: str, api_key: str) -> bool:
+    body = json.dumps({"response": response, "sitekey": sitekey}).encode("utf-8")
+    req = urllib.request.Request(
+        FRC_VERIFY_URL, data=body, method="POST",
+        headers={"Content-Type": "application/json", "X-API-Key": api_key},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as res:
+            return bool(json.loads(res.read().decode("utf-8")).get("success"))
+    except urllib.error.HTTPError as exc:
+        if exc.code >= 500:
+            # Friendly-API gestört: nicht alle Menschen aussperren.
+            # E-Mail-Bestätigung und Admin-Freigabe greifen trotzdem.
+            log.warning("Friendly Captcha nicht erreichbar (%s) – Anfrage zugelassen.", exc.code)
+            return True
+        # 4xx: ungültige Antwort oder falscher API-Key/Sitekey.
+        log.warning("Friendly Captcha abgelehnt (%s): %s", exc.code,
+                    exc.read()[:300].decode("utf-8", "replace"))
+        return False
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        log.warning("Friendly Captcha nicht erreichbar (%s) – Anfrage zugelassen.", exc)
+        return True
+
+
+def check(cid: str | None, answer: str | None) -> bool:
+    """Prüft eine Captcha-Antwort mit dem aktuell aktiven Verfahren."""
+    keys = _friendly_keys()
+    if keys:
+        # Mathe-Antworten werden dann nicht mehr akzeptiert – sonst könnten Bots
+        # das stärkere Captcha einfach umgehen.
+        if cid != FRC_ID or not (answer or "").strip():
+            return False
+        return _verify_friendly(answer.strip(), *keys)
+    return verify(cid, answer)

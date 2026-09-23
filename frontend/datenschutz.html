@@ -55,6 +55,7 @@
       <tr><td>PayPal-Zahlungsadresse bzw. PayPal.me-Link (optional)</td><td>Anzeige eines Spenden-Buttons auf Ihrem Profil. Wird nur gespeichert und verlinkt, wenn Sie selbst eine Adresse eintragen. Bei Eintragung einer E-Mail-Adresse ist diese im erzeugten Spenden-Link enthalten und damit öffentlich einsehbar; ein PayPal.me-Link schützt Ihre E-Mail.</td><td>Art. 6 Abs. 1 lit. a DSGVO (Einwilligung durch aktive Eingabe)</td><td>Bis zur Entfernung durch Sie oder zur Account-Löschung</td></tr>
       <tr><td>Zeitpunkt und IP-Adresse Ihrer Zustimmung zu den AGB</td><td>Nachweis der erteilten Rechteversicherung und AGB-Zustimmung</td><td>Art. 6 Abs. 1 lit. f DSGVO (berechtigtes Interesse an Beweissicherung)</td><td>Bis zur Account-Löschung</td></tr>
     </table>
+    <p>Nach der Registrierung bestätigen Sie Ihre E-Mail-Adresse über einen Link, den wir Ihnen zusenden. Anschließend prüft der Betreiber jede Anmeldung persönlich und schaltet das Konto frei; bis dahin ist Ihr Profil nicht öffentlich sichtbar. Wird eine Anmeldung abgelehnt oder die E-Mail-Adresse nicht innerhalb von 7 Tagen bestätigt, werden die Daten gelöscht.</p>
     <p>Sie können Ihren Account jederzeit selbst über die „Gefahrenzone" in Ihrem Profil löschen oder sich an die oben genannte Kontaktadresse wenden.</p>
 
     <h3>c) Server-Logfiles</h3>
@@ -75,7 +76,7 @@
       <tr><td>Name, E-Mail-Adresse, Betreff, Nachrichtentext</td><td>Bearbeitung und Beantwortung Ihrer Anfrage</td><td>Art. 6 Abs. 1 lit. b bzw. lit. f DSGVO</td><td>Bis zur abschließenden Bearbeitung; danach Löschung, sofern keine gesetzlichen Aufbewahrungspflichten bestehen</td></tr>
       <tr><td>IP-Adresse und Zeitpunkt des Absendens</td><td>Schutz vor automatisiertem Missbrauch (Spam-/Bot-Abwehr)</td><td>Art. 6 Abs. 1 lit. f DSGVO (berechtigtes Interesse)</td><td>Wie vorstehend</td></tr>
     </table>
-    <p>Zur Abwehr von Spam setzen wir beim Absenden eine Rechen-Aufgabe (Captcha), ein verstecktes Honeypot-Feld sowie eine Begrenzung der Anfragen pro IP-Adresse ein. Diese Prüfungen finden ausschließlich auf unserem eigenen Server statt; es werden dabei keine Daten an Dritte übermittelt. Sofern Sie eine Admin-E-Mail-Adresse hinterlegt haben, wird der Inhalt Ihrer Nachricht zusätzlich per E-Mail an diese Adresse weitergeleitet (über den von Ihnen konfigurierten E-Mail-Anbieter).</p>
+    <p>Zur Abwehr von Spam setzen wir beim Absenden eine Anti-Bot-Prüfung (Captcha, siehe Abschnitt 6 c), ein verstecktes Honeypot-Feld sowie eine Begrenzung der Anfragen pro IP-Adresse ein. Sofern Sie eine Admin-E-Mail-Adresse hinterlegt haben, wird der Inhalt Ihrer Nachricht zusätzlich per E-Mail an diese Adresse weitergeleitet (über den von Ihnen konfigurierten E-Mail-Anbieter).</p>
 
     <h3>e) Wiedergabezählung und Upload-Prüfung</h3>
     <p>Zur Anzeige der beliebtesten Songs zählen wir, wie oft ein Titel abgespielt wird. Diese Zählung erfolgt <strong>anonym und ausschließlich aggregiert</strong> (eine fortlaufende Zahl pro Titel). Es werden dabei keine personenbezogenen Daten der Hörer:innen gespeichert und keine individuellen Hörprofile gebildet.</p>
@@ -106,6 +107,9 @@
 
     <h3>b) AcoustID (Fingerabdruck-Abgleich, optional)</h3>
     <p>Sofern in den Servereinstellungen aktiviert, übermitteln wir beim Upload einer Audiodatei den technischen Fingerabdruck (siehe Abschnitt 3 e) zum Abgleich an den Dienst <strong>AcoustID</strong> (betrieben durch die MetaBrainz Foundation). Übermittelt wird ausschließlich der akustische Fingerabdruck nebst Dauer der Aufnahme — <strong>keine Nutzer-, Kontakt- oder Hördaten</strong>. Die Datenschutzhinweise sind abrufbar unter <a href="https://metabrainz.org/privacy" target="_blank" rel="noopener">metabrainz.org/privacy</a>. Diese Funktion kann vom Betreiber deaktiviert werden; in diesem Fall findet keine Übermittlung statt.</p>
+
+    <h3>c) Friendly Captcha (Anti-Bot-Prüfung)</h3>
+    <p>Zum Schutz der Registrierung und des Kontaktformulars vor automatisierten Anfragen (Bots) setzen wir den Dienst <strong>Friendly Captcha</strong> der Friendly Captcha GmbH, Am Anger 3-5, 82237 Wörthsee, Deutschland, ein. Friendly Captcha stellt Ihrem Browser eine kleine Rechenaufgabe, die im Hintergrund gelöst wird; es werden keine Bilderrätsel angezeigt und <strong>keine Cookies gesetzt</strong>. Dabei werden Ihre IP-Adresse (die Friendly Captcha per Einweg-Hash anonymisiert), technische Merkmale des Browsers und der Zeitpunkt der Anfrage an Friendly Captcha übermittelt, um Bots von Menschen zu unterscheiden. Die zugehörige Skriptdatei wird über das Content-Delivery-Netzwerk jsDelivr geladen, das dabei Ihre IP-Adresse verarbeitet. Rechtsgrundlage ist Art. 6 Abs. 1 lit. f DSGVO (berechtigtes Interesse am Schutz der Plattform vor Missbrauch). Weitere Informationen: <a href="https://friendlycaptcha.com/legal/privacy-end-users/" target="_blank" rel="noopener">friendlycaptcha.com/legal/privacy-end-users</a>. Ist Friendly Captcha nicht aktiviert, verwenden wir stattdessen eine einfache Rechenfrage, die ausschließlich auf unserem eigenen Server geprüft wird.</p>
 
     <h2>7. Hosting</h2>
     <p>Das Hosting der Plattform erfolgt bei der</p>

@@ -51,6 +51,12 @@ DEFAULTS: dict = {
     # "warn":   Match wird nur protokolliert, Upload geht durch.
     # "off":    Keine AcoustID-Abfrage, nur lokale Duplikatsprüfung.
     "fingerprint_mode": "strict",
+
+    # --- Anti-Bot: Friendly Captcha (https://friendlycaptcha.com) ---
+    # Sind Sitekey UND API-Key gesetzt, ersetzt Friendly Captcha die
+    # Mathe-Frage bei Registrierung und Kontaktformular.
+    "frc_sitekey": "",
+    "frc_api_key": "",
 }
 
 
@@ -108,7 +114,11 @@ EDITABLE_KEYS = (
     "smtp_use_tls", "smtp_use_ssl",
     "acoustid_api_key", "fingerprint_mode",
     "platform_paypal", "public_base_url",
+    "frc_sitekey", "frc_api_key",
 )
+
+# Werte, die nie im Klartext an die Admin-UI zurückgehen.
+SECRET_KEYS = ("smtp_password", "frc_api_key")
 
 VALID_FP_MODES = ("strict", "warn", "off")
 
@@ -120,8 +130,9 @@ def safe_view() -> dict:
     """Konfig für die Admin-UI – Passwort wird maskiert."""
     cfg = load()
     view = {k: cfg.get(k, "") for k in EDITABLE_KEYS}
-    if view.get("smtp_password"):
-        view["smtp_password"] = PASSWORD_MASK
+    for key in SECRET_KEYS:
+        if view.get(key):
+            view[key] = PASSWORD_MASK
     view["smtp_configured"] = smtp_configured()
     return view
 
@@ -145,12 +156,14 @@ def save(updates: dict) -> dict:
         if key not in updates:
             continue
         val = updates[key]
-        if key == "smtp_password":
+        if key in SECRET_KEYS:
             # Maske oder leerer String? -> nicht überschreiben.
             if val == PASSWORD_MASK or not val:
                 continue
             # Gmail zeigt App-Passwörter in 4er-Blöcken mit Leerzeichen an.
             val = "".join(str(val).split())
+        elif key == "frc_sitekey":
+            val = str(val or "").strip()
         if key == "smtp_port":
             try: val = int(val)
             except (TypeError, ValueError): val = 587

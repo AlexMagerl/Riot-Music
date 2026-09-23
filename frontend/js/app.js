@@ -911,31 +911,8 @@ async function renderContact() {
     el("label", {}, "Website (bitte leer lassen)"),
     el("input", { type: "text", name: "website", tabindex: "-1", autocomplete: "off" })));
 
-  // Mathe-Captcha
-  let captchaState = null;
-  const captchaQ = el("div", { class: "captcha-q" }, "lädt …");
-  const captchaInput = el("input", { name: "captchaAnswer", required: true,
-    inputmode: "numeric", autocomplete: "off", placeholder: "Antwort" });
-  const captchaIdInput = el("input", { type: "hidden", name: "captchaId" });
-  const reloadBtn = el("button", { type: "button", class: "ghost-btn small",
-    onclick: (e) => { e.preventDefault(); loadCaptcha(); } }, "↻ Neu");
-
-  async function loadCaptcha() {
-    captchaQ.textContent = "lädt …";
-    try {
-      captchaState = await fetch("/api/auth/captcha").then((r) => r.json());
-      captchaQ.textContent = captchaState.question;
-      captchaIdInput.value = captchaState.id;
-      captchaInput.value = "";
-    } catch {
-      captchaQ.textContent = "Captcha konnte nicht geladen werden.";
-    }
-  }
-
-  form.appendChild(el("div", { class: "field captcha-field" },
-    el("label", {}, "Sicherheitsfrage (Anti-Spam)"),
-    el("div", { class: "captcha-row" }, captchaQ, captchaInput, reloadBtn),
-    captchaIdInput));
+  const captcha = RiotCaptcha.mount({ label: "Anti-Spam-Prüfung" });
+  form.appendChild(captcha.element);
 
   form.appendChild(el("p", { class: "form-hint" },
     "Hinweis: Wir prüfen jede Nachricht automatisch auf Spam. " +
@@ -962,13 +939,13 @@ async function renderContact() {
       status.textContent = "✓ Deine Nachricht wurde gesendet. Vielen Dank!";
       status.className = "contact-status ok";
       form.reset();
-      await loadCaptcha();
+      await captcha.reload();
       // Counter zurücksetzen
       counter.textContent = "0 / 5000";
     } catch (err) {
       status.textContent = "✗ " + err.message;
       status.className = "contact-status error";
-      await loadCaptcha();   // Captcha ist verbraucht – neues laden
+      await captcha.reload();   // Captcha ist verbraucht – neues laden
     } finally {
       submitBtn.disabled = false;
     }
@@ -976,7 +953,6 @@ async function renderContact() {
 
   wrap.appendChild(form);
   view.appendChild(wrap);
-  loadCaptcha();
 }
 
 /* ==================================================================

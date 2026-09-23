@@ -70,7 +70,6 @@ function renderAuth(mode = "login") {
     el("input", { name: "password", type: "password", required: true, minlength: 8,
       autocomplete: mode === "login" ? "current-password" : "new-password" })));
 
-  let captchaState = null;
   if (mode === "register") {
     form.appendChild(el("div", { class: "field" }, el("label", {}, "Künstlername"),
       el("input", { name: "artistName", required: true, placeholder: "z.B. Johnny Guitar" })));
@@ -81,22 +80,8 @@ function renderAuth(mode = "login") {
     },
       el("label", {}, "Website (bitte leer lassen)"),
       el("input", { type: "text", name: "website", tabindex: "-1", autocomplete: "off" })));
-    const captchaLabel = el("label", {}, "Anti-Bot-Frage");
-    const captchaQ = el("div", { class: "captcha-q", style: "padding:8px 0;color:var(--text-dim)" }, "lädt …");
-    const captchaInput = el("input", { name: "captchaAnswer", required: true,
-      inputmode: "numeric", autocomplete: "off", placeholder: "Antwort" });
-    const captchaIdInput = el("input", { type: "hidden", name: "captchaId" });
-    const reloadCaptcha = async () => {
-      try {
-        captchaState = await fetch("/api/auth/captcha").then(r => r.json());
-        captchaQ.textContent = captchaState.question;
-        captchaIdInput.value = captchaState.id;
-        captchaInput.value = "";
-      } catch {
-        captchaQ.textContent = "Captcha konnte nicht geladen werden.";
-      }
-    };
-    form.appendChild(el("div", { class: "field" }, captchaLabel, captchaQ, captchaInput, captchaIdInput));
+    const captcha = RiotCaptcha.mount();
+    form.appendChild(captcha.element);
 
     // Pflicht-Häkchen: AGB & Rechte-Versicherung
     const agbBox = el("input", { type: "checkbox", name: "acceptAgb", required: true });
@@ -114,9 +99,9 @@ function renderAuth(mode = "login") {
         ".")));
 
     form.appendChild(el("p", { class: "auth-hint" },
-      "Mit der Registrierung wird automatisch dein Künstlerprofil angelegt. Genre & Details legst du danach im Profil fest."));
-    reloadCaptcha();
-    form._reloadCaptcha = reloadCaptcha;
+      "Mit der Registrierung wird automatisch dein Künstlerprofil angelegt. " +
+      "Wir schauen uns jede Anmeldung kurz an und schalten dein Konto dann frei."));
+    form._reloadCaptcha = captcha.reload;
   }
 
   form.appendChild(el("button", { type: "submit", class: "primary-btn full" },
@@ -131,14 +116,11 @@ function renderAuth(mode = "login") {
       const btn = $("button[type=submit]", form); btn.disabled = true;
       const data = await apiSend("POST", url, fd);
 
-      // Double-Opt-In: Registrierung wartet auf E-Mail-Bestätigung.
+      // Registrierung wartet auf E-Mail-Bestätigung bzw. Admin-Freigabe.
       if (data.pending) {
-        renderPendingVerification(data.email);
+        if (data.stage === "approval") renderPendingApproval();
+        else renderPendingVerification(data.email);
         return;
-      }
-      if (data.verificationMailFailed) {
-        toast("Konto erstellt — Bestätigungsmail konnte nicht gesendet werden, " +
-              "du bist direkt freigeschaltet.", "ok");
       }
 
       state.artist = data.artist;
@@ -157,6 +139,11 @@ function renderAuth(mode = "login") {
         renderPendingVerification(emailVal, err.message);
         return;
       }
+      // Login vor der Admin-Freigabe -> Warte-Hinweis statt Fehler-Toast.
+      if (mode === "login" && /Freischaltung/i.test(err.message)) {
+        renderPendingApproval();
+        return;
+      }
       toast("Fehler: " + err.message, "error");
       if (mode === "register" && form._reloadCaptcha) form._reloadCaptcha();
     }
@@ -168,6 +155,24 @@ function renderAuth(mode = "login") {
     tabs, form));
 }
 
+/* ---- Kuratierung: Hinweis „wartet auf Freischaltung" ---- */
+function renderPendingApproval() {
+  $("#top-actions").innerHTML = "";
+  $("#top-actions").appendChild(el("a", { href: "/", class: "back-link" }, "← Zur Hörer-Ansicht"));
+  const r = root();
+  r.innerHTML = "";
+  r.appendChild(el("div", { class: "auth-card" },
+    el("div", { style: "font-size:2.4rem;text-align:center" }, "🕓"),
+    el("h1", {}, "Wartet auf Freischaltung"),
+    el("p", { class: "auth-sub" },
+      "Danke für deine Anmeldung! Wir schauen uns jedes neue Konto persönlich an. " +
+      "Sobald deins freigeschaltet ist, bekommst du eine E-Mail und kannst dich anmelden."),
+    el("div", { style: "margin-top:14px;text-align:center" },
+      el("a", { href: "#", class: "back-link",
+        onclick: (e) => { e.preventDefault(); renderAuth("login"); } },
+        "← Zurück zur Anmeldung"))));
+}
+
 /* ---- Double-Opt-In: Hinweis „bitte E-Mail bestätigen" ---- */
 function renderPendingVerification(email, customMsg) {
   $("#top-actions").innerHTML = "";
@@ -177,7 +182,8 @@ function renderPendingVerification(email, customMsg) {
 
   const msg = customMsg ||
     "Fast geschafft! Wir haben dir eine Bestätigungsmail geschickt. " +
-    "Bitte klicke auf den Link in der E-Mail, um dein Profil zu aktivieren.";
+    "Bitte klicke auf den Link in der E-Mail. Danach schauen wir uns deine Anmeldung " +
+    "an und schalten dein Konto frei.";
 
   const status = el("div", { class: "contact-status", style: "min-height:1.2em" });
 

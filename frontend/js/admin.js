@@ -337,23 +337,9 @@ function renderAdminLogin(mode, loggedInAs) {
     },
       el("label", {}, "Website (bitte leer lassen)"),
       el("input", { type: "text", name: "website", tabindex: "-1", autocomplete: "off" })));
-    const captchaQ = el("div", { class: "captcha-q", style: "padding:8px 0;color:var(--text-dim)" }, "lädt …");
-    const captchaInput = el("input", { name: "captchaAnswer", required: true,
-      inputmode: "numeric", autocomplete: "off", placeholder: "Antwort" });
-    const captchaIdInput = el("input", { type: "hidden", name: "captchaId" });
-    reloadCaptcha = async () => {
-      try {
-        const c = await fetch("/api/auth/captcha").then(r => r.json());
-        captchaQ.textContent = c.question;
-        captchaIdInput.value = c.id;
-        captchaInput.value = "";
-      } catch {
-        captchaQ.textContent = "Captcha konnte nicht geladen werden.";
-      }
-    };
-    form.appendChild(el("div", { class: "field" },
-      el("label", {}, "Anti-Bot-Frage"), captchaQ, captchaInput, captchaIdInput));
-    reloadCaptcha();
+    const captcha = RiotCaptcha.mount();
+    form.appendChild(captcha.element);
+    reloadCaptcha = captcha.reload;
   }
 
   form.appendChild(el("button", { type: "submit", class: "primary-btn full" },
@@ -401,7 +387,7 @@ async function startAdmin() {
   // Ungelesen-Badge im Hintergrund laden
   refreshInboxBadge(inboxBtn);
   const unverifiedBtn = el("button", { class: "ghost-btn full", style: "margin-top:8px",
-    id: "btn-unverified", onclick: showUnverified }, "🕓 Unbestätigte Konten");
+    id: "btn-unverified", onclick: showUnverified }, "🕓 Wartende Konten");
   aside.appendChild(unverifiedBtn);
   refreshUnverifiedBadge(unverifiedBtn);
   aside.appendChild(el("button", { class: "ghost-btn full", style: "margin-top:8px",
@@ -534,12 +520,12 @@ function renderInboxItem(m, reload) {
   return card;
 }
 
-/* ---------- Unbestätigte Konten (Double-Opt-In offen) ---------- */
+/* ---------- Wartende Konten (E-Mail-Bestätigung oder Freigabe offen) ---------- */
 async function refreshUnverifiedBadge(btn) {
   try {
     const data = await fetch("/api/admin/unverified").then(r => r.json());
     const n = (data && data.count) || 0;
-    btn.textContent = n > 0 ? `🕓 Unbestätigte Konten (${n})` : "🕓 Unbestätigte Konten";
+    btn.textContent = n > 0 ? `🕓 Wartende Konten (${n})` : "🕓 Wartende Konten";
   } catch { /* ignore */ }
 }
 
@@ -551,10 +537,11 @@ async function showUnverified() {
   main.innerHTML = "";
 
   const panel = el("div", { class: "panel" });
-  panel.appendChild(el("h2", {}, "🕓 Unbestätigte Konten"));
+  panel.appendChild(el("h2", {}, "🕓 Wartende Konten"));
   panel.appendChild(el("p", { style: "color:var(--text-dim);margin-bottom:18px" },
-    "Konten, deren E-Mail-Bestätigung (Double-Opt-In) noch aussteht. Solche Profile " +
-    "sind nicht öffentlich sichtbar. Du kannst sie manuell freischalten oder löschen."));
+    "Neue Konten müssen erst die E-Mail-Adresse bestätigen und dann von dir " +
+    "freigegeben werden. Bis dahin können sie sich nicht anmelden und ihr Profil " +
+    "ist nicht öffentlich sichtbar. Beim Freigeben bekommt die Person eine E-Mail."));
 
   const listWrap = el("div", { class: "inbox-list" });
   panel.appendChild(listWrap);
@@ -568,23 +555,23 @@ async function showUnverified() {
 
       if (!data.mailEnabled) {
         listWrap.appendChild(el("p", { class: "fp-banner partial" },
-          "⚠ Kein SMTP konfiguriert — neue Registrierungen werden derzeit ohne " +
-          "E-Mail-Bestätigung sofort freigeschaltet."));
+          "⚠ Kein SMTP konfiguriert — E-Mail-Adressen neuer Konten werden nicht " +
+          "bestätigt, und die Freigabe-Mail kann nicht verschickt werden."));
       }
 
       const items = data.unverified || [];
       if (!items.length) {
         listWrap.appendChild(el("p", { style: "color:var(--text-dim)" },
-          "Keine offenen Bestätigungen. 👍"));
+          "Keine wartenden Konten. 👍"));
       } else {
         // Sammel-Aufräumen
         listWrap.appendChild(el("div", { style: "margin-bottom:14px" },
           el("button", { class: "danger-btn", onclick: async () => {
-            if (!confirm("Alle unbestätigten Konten löschen, die älter als 7 Tage sind?")) return;
+            if (!confirm("Alle Konten ohne E-Mail-Bestätigung löschen, die älter als 7 Tage sind?")) return;
             const r = await fetch("/api/admin/prune-unverified", { method: "POST" }).then(r => r.json());
             toast(`${r.removed} altes Konto/Konten entfernt.`, "ok");
             load();
-          } }, "🧹 Alte (>7 Tage) aufräumen")));
+          } }, "🧹 Unbestätigte (>7 Tage) aufräumen")));
 
         items.forEach((u) => listWrap.appendChild(renderUnverifiedItem(u, load)));
       }
@@ -601,25 +588,40 @@ async function showUnverified() {
 function renderUnverifiedItem(u, reload) {
   const card = el("div", { class: "inbox-item unread" });
   const created = u.createdAt ? new Date(u.createdAt * 1000).toLocaleString("de-DE") : "?";
+  const stage = u.emailVerified
+    ? "✅ E-Mail bestätigt — wartet auf deine Freigabe"
+    : "📧 E-Mail noch nicht bestätigt";
   card.appendChild(el("div", { class: "inbox-head" },
     el("div", { class: "inbox-meta" },
       el("strong", {}, u.artistName || "(ohne Namen)"),
       el("div", { class: "inbox-from" }, u.email),
-      el("div", { class: "inbox-date" }, `Registriert: ${created} · seit ${u.ageHours} h offen`)),
+      el("div", { class: "inbox-date" }, stage),
+      el("div", { class: "inbox-date" },
+        `Registriert: ${created} · seit ${u.ageHours} h offen` +
+        (u.registeredIp ? ` · IP ${u.registeredIp}` : ""))),
     el("div", { class: "inbox-actions" },
       el("button", { class: "ghost-btn small", onclick: async () => {
-        await fetch(`/api/admin/unverified/${encodeURIComponent(u.email)}/verify`,
-                    { method: "POST" });
-        toast("Konto freigeschaltet.", "ok");
+        if (!u.emailVerified &&
+            !confirm(`${u.email} hat die E-Mail-Adresse noch nicht bestätigt. Trotzdem freigeben?`)) return;
+        try {
+          const r = await apiSend("POST",
+            `/api/admin/unverified/${encodeURIComponent(u.email)}/verify`);
+          toast(r.mailed ? "Freigegeben — Info-Mail ist raus." : "Freigegeben (ohne Info-Mail).", "ok");
+        } catch (err) {
+          toast("Fehler: " + err.message, "error");
+        }
         reload();
-      } }, "✓ Freischalten"),
+      } }, "✓ Freigeben"),
       el("button", { class: "danger-btn", onclick: async () => {
-        if (!confirm(`Konto „${u.email}" und Profil endgültig löschen?`)) return;
-        await fetch(`/api/admin/unverified/${encodeURIComponent(u.email)}`,
-                    { method: "DELETE" });
-        toast("Konto gelöscht.", "ok");
+        if (!confirm(`Konto „${u.email}" ablehnen und samt Profil endgültig löschen?`)) return;
+        try {
+          await apiSend("DELETE", `/api/admin/unverified/${encodeURIComponent(u.email)}`);
+          toast("Konto abgelehnt und gelöscht.", "ok");
+        } catch (err) {
+          toast("Fehler: " + err.message, "error");
+        }
         reload();
-      } }, "Löschen"))));
+      } }, "Ablehnen"))));
   return card;
 }
 
@@ -721,6 +723,21 @@ async function showSettings() {
     "Häufige Anbieter: Gmail → smtp.gmail.com:587 (STARTTLS, App-Passwort). " +
     "mailbox.org / Strato → :465 (SSL). Posteo → smtp.posteo.de:587 (STARTTLS).");
   form.appendChild(presetHint);
+
+  // -------- Anti-Bot-Sektion --------
+  form.appendChild(el("h3", {}, "🛡 Anti-Bot-Schutz (Friendly Captcha)"));
+  form.appendChild(el("div", { class: "settings-status " + (cfg.frc_sitekey && cfg.frc_api_key ? "ok" : "warn") },
+    cfg.frc_sitekey && cfg.frc_api_key
+      ? "✓ Friendly Captcha ist aktiv (Registrierung & Kontaktformular)."
+      : "○ Nicht eingerichtet — es wird die einfache Mathe-Frage verwendet."));
+  form.appendChild(field("Sitekey", "frc_sitekey", "text", cfg.frc_sitekey,
+    { placeholder: "FC…",
+      hint: "Kostenloser Account bei friendlycaptcha.com → Application anlegen (Domain riot-music.eu). " +
+            "Sitekey leeren = Friendly Captcha wieder abschalten." }));
+  form.appendChild(field("API-Key", "frc_api_key", "password", "",
+    { autocomplete: "new-password",
+      placeholder: cfg.frc_api_key ? "API-Key ist gespeichert" : "noch kein API-Key gespeichert",
+      hint: "Nur ausfüllen, um den Key zu ändern. Leer lassen = unverändert." }));
 
   // -------- Fingerprinting-Sektion --------
   form.appendChild(el("h3", {}, "🎧 Audio-Fingerprinting"));
@@ -832,6 +849,8 @@ async function showSettings() {
       acoustid_api_key: fd.get("acoustid_api_key") || "",
       fingerprint_mode: fd.get("fingerprint_mode") || "strict",
       platform_paypal: fd.get("platform_paypal") || "",
+      frc_sitekey: fd.get("frc_sitekey") || "",
+      frc_api_key: fd.get("frc_api_key") || "********",
     };
     // Wenn das Passwort-Feld leer ist, schicke die Maske – Backend lässt
     // den gespeicherten Wert dann unverändert.
@@ -861,8 +880,9 @@ async function showSettings() {
         statusBadge.className = "settings-status warn";
         statusBadge.textContent = "⚠ Noch nicht vollständig konfiguriert. Nachrichten landen nur im Posteingang.";
       }
-      // Passwortfeld nach dem Speichern auf Maske setzen
+      // Geheimnis-Felder nach dem Speichern leeren (Wert bleibt gespeichert)
       form.querySelector("input[name=smtp_password]").value = "";
+      form.querySelector("input[name=frc_api_key]").value = "";
     } catch (err) {
       status.className = "contact-status error";
       status.textContent = "✗ " + err.message;

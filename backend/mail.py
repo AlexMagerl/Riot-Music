@@ -110,3 +110,25 @@ def send_contact_notification(name: str, sender_email: str,
     )
     return _send(to_addr, f"[Riot Music – Kontakt] {subject}", text,
                  reply_to=sender_email)
+
+
+def send_admin_notice(subject: str, body: str) -> bool:
+    """Kurze Info-Mail an die Admin-Adresse (z. B. neue Anmeldung zur Freigabe)."""
+    to_addr = (config.load().get("admin_email") or "").strip()
+    if not to_addr:
+        return False
+    return _send(to_addr, f"[Riot Music] {subject}", body)
+
+
+def send_approved(to_email: str, login_link: str, artist_name: str = "") -> bool:
+    """Teilt einer:m Künstler:in mit, dass das Konto freigeschaltet wurde."""
+    greeting = f"Hallo {artist_name}," if artist_name else "Hallo,"
+    body = (
+        f"{greeting}\n\n"
+        "dein Künstlerkonto bei Riot Music ist jetzt freigeschaltet. "
+        "Du kannst dich ab sofort anmelden, dein Profil gestalten und Musik hochladen:\n\n"
+        f"{login_link}\n\n"
+        "Schön, dass du dabei bist!\n\n"
+        "✊ Riot Music"
+    )
+    return _send(to_email, "Dein Riot-Music-Konto ist freigeschaltet", body)
