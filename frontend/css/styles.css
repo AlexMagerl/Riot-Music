@@ -746,8 +746,35 @@ input[type="range"]::-moz-range-thumb {
 }
 
 @media (max-width: 760px) {
-  .app { grid-template-columns: 1fr; }
-  .sidebar { display: none; }
+  .app { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+  .main { min-height: 0; }
+  /* Seitenleiste wird zur kompakten Kopfzeile:
+     Zeile 1: Logo links, Impressum/Datenschutz/AGB rechts
+     Zeile 2: Navigation als waagerecht wischbare Chips */
+  .sidebar {
+    display: grid; grid-template-columns: auto 1fr; align-items: center;
+    gap: 8px 12px; padding: 10px 16px 10px;
+    border-right: none; border-bottom: 1px solid var(--border); overflow: visible;
+  }
+  .brand { margin-bottom: 0; font-size: 1.15rem; gap: 6px; }
+  .brand-mark { font-size: 1.25rem; }
+  .sidebar-foot { grid-row: 1; grid-column: 2; justify-self: end; margin: 0; padding: 0; }
+  .legal-links { margin-top: 0; gap: 12px; }
+  .legal-links a { font-size: 0.76rem; color: var(--text-dim); }
+  .nav {
+    grid-row: 2; grid-column: 1 / -1; flex-direction: row; gap: 6px; margin: 0;
+    overflow-x: auto; scrollbar-width: none;
+    /* Weicher Rand rechts zeigt: hier geht es weiter (wischen) */
+    padding-right: 28px;
+    -webkit-mask-image: linear-gradient(to right, #000 82%, transparent);
+    mask-image: linear-gradient(to right, #000 82%, transparent);
+  }
+  .nav::-webkit-scrollbar { display: none; }
+  .nav-link {
+    flex: 0 0 auto; white-space: nowrap; padding: 6px 12px; font-size: 0.85rem;
+    background: var(--bg-elev); border-radius: 999px;
+  }
+  .nav-studio { margin-top: 0; }
   .player { grid-template-columns: 1fr 1.4fr; }
   .player-right { display: none; }
   .editor-layout {
