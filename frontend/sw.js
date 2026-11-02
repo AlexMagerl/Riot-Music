@@ -3,11 +3,12 @@
    Stale-JS nach Deploys), Cache nur als Offline-Fallback. API, Medien
    (Audio/Bilder) und Range-Requests werden NIE gecacht (immer direkt aus dem
    Netz gestreamt). */
-const CACHE = "riot-music-v1";
+const CACHE = "riot-music-v2";
 const SHELL = [
   "/", "/index.html",
-  "/css/styles.css",
-  "/js/app.js",
+  "/css/styles.css?v=2",
+  "/css/riot.css?v=2",
+  "/js/app.js?v=2",
   "/favicon.svg",
   "/manifest.json",
   "/icons/icon-192.png",
