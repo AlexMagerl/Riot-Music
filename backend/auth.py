@@ -1,12 +1,13 @@
 """
 Authentifizierung für Riot Music – ohne externe Abhängigkeiten.
 
-  * Passwort-Hashing via PBKDF2-HMAC-SHA256 (Standardbibliothek).
-  * Sitzungs-Token: stateless, HMAC-signiert (überlebt Server-Reloads),
-    wird als HttpOnly-Cookie gesetzt.
-
-Hinweis: Für einen Prototyp ausreichend. Für Produktion zusätzlich HTTPS,
-Secure-Cookie-Flag, Rate-Limiting und ggf. bcrypt/argon2 erwägen.
+  * Passwort-Hashing via PBKDF2-HMAC-SHA256 (Standardbibliothek). Ältere Hashes
+    mit weniger Runden werden beim nächsten Login automatisch erneuert.
+  * Sitzungs-Token: stateless, HMAC-signiert, als HttpOnly-Cookie gesetzt.
+    Enthält die „Sitzungsversion“ des Kontos – wird sie erhöht (Passwort
+    geändert, „überall abmelden“), sind alle bisherigen Sitzungen ungültig.
+  * Zweckgebundene Aktions-Token (E-Mail-Bestätigung, Passwort-Reset, 2FA-
+    Zwischenschritt, „Gerät merken“). Sie werden nie als Sitzung akzeptiert.
 """
 from __future__ import annotations
 
@@ -21,9 +22,11 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 SECRET_PATH = BASE_DIR / "data" / "secret.key"
 
-ITERATIONS = 200_000
-TOKEN_TTL = 60 * 60 * 24 * 14  # 14 Tage
+ITERATIONS = 600_000            # OWASP-Empfehlung für PBKDF2-HMAC-SHA256 (2023+)
+TOKEN_TTL = 60 * 60 * 24 * 14   # 14 Tage
 COOKIE_NAME = "rm_session"
+TRUST_COOKIE = "rm_trust"       # „Dieses Gerät 30 Tage merken“ (2FA)
+TRUST_TTL = 60 * 60 * 24 * 30
 
 
 def _load_secret() -> bytes:
@@ -59,8 +62,16 @@ def verify_password(password: str, stored: str) -> bool:
         return False
 
 
+def needs_rehash(stored: str) -> bool:
+    """True, wenn der Hash mit weniger Runden als heute üblich erstellt wurde."""
+    try:
+        return int(stored.split("$")[1]) < ITERATIONS
+    except (IndexError, ValueError, AttributeError):
+        return False
+
+
 # ---------------------------------------------------------------------------
-# Token (signiert, stateless)
+# Signierte Token (stateless)
 # ---------------------------------------------------------------------------
 def _b64e(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
@@ -70,15 +81,14 @@ def _b64d(s: str) -> bytes:
     return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
 
 
-def make_token(email: str) -> str:
-    payload = {"email": email, "exp": int(time.time()) + TOKEN_TTL}
+def _sign(payload: dict) -> str:
     body = _b64e(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
     sig = _b64e(hmac.new(_SECRET, body.encode("ascii"), hashlib.sha256).digest())
     return f"{body}.{sig}"
 
 
-def read_token(token: str | None) -> str | None:
-    """Gibt die E-Mail aus einem gültigen, nicht abgelaufenen Token zurück, sonst None."""
+def _unsign(token: str | None) -> dict | None:
+    """Payload eines gültig signierten, nicht abgelaufenen Tokens – sonst None."""
     if not token or "." not in token:
         return None
     try:
@@ -87,39 +97,61 @@ def read_token(token: str | None) -> str | None:
         if not hmac.compare_digest(sig, expected):
             return None
         payload = json.loads(_b64d(body))
-        if int(payload.get("exp", 0)) < time.time():
+        if not isinstance(payload, dict) or int(payload.get("exp", 0)) < time.time():
             return None
-        return payload.get("email")
+        return payload
     except (ValueError, json.JSONDecodeError):
         return None
 
 
 # ---------------------------------------------------------------------------
-# Zweckgebundene Aktions-Token (z. B. E-Mail-Bestätigung) – ebenfalls stateless
+# Sitzungen
 # ---------------------------------------------------------------------------
-def make_action_token(email: str, purpose: str, ttl_seconds: int) -> str:
-    payload = {"email": (email or "").strip().lower(),
-               "purpose": purpose,
-               "exp": int(time.time()) + int(ttl_seconds)}
-    body = _b64e(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
-    sig = _b64e(hmac.new(_SECRET, body.encode("ascii"), hashlib.sha256).digest())
-    return f"{body}.{sig}"
+def make_token(email: str, session_version: int = 0) -> str:
+    return _sign({"purpose": "session", "email": email, "sv": int(session_version),
+                  "exp": int(time.time()) + TOKEN_TTL})
+
+
+def read_session(token: str | None) -> dict | None:
+    """
+    {"email", "sv"} aus einem Sitzungs-Token, sonst None.
+    Ältere Sitzungs-Token haben kein "purpose"-Feld und bleiben bis zum Ablauf
+    gültig; jedes andere Token (z. B. ein Bestätigungslink) wird abgelehnt.
+    """
+    payload = _unsign(token)
+    if not payload or payload.get("purpose", "session") != "session":
+        return None
+    if not payload.get("email"):
+        return None
+    return {"email": payload["email"], "sv": int(payload.get("sv", 0))}
+
+
+def read_token(token: str | None) -> str | None:
+    """E-Mail aus einem gültigen Sitzungs-Token (Kompatibilität)."""
+    session = read_session(token)
+    return session["email"] if session else None
+
+
+# ---------------------------------------------------------------------------
+# Zweckgebundene Aktions-Token
+# ---------------------------------------------------------------------------
+def make_action_token(email: str, purpose: str, ttl_seconds: int, **extra) -> str:
+    if purpose == "session":
+        raise ValueError("Aktions-Token dürfen keine Sitzung sein.")
+    payload = {"email": (email or "").strip().lower(), "purpose": purpose,
+               "exp": int(time.time()) + int(ttl_seconds), **extra}
+    return _sign(payload)
+
+
+def read_action_payload(token: str | None, purpose: str) -> dict | None:
+    """Payload eines gültigen Aktions-Tokens mit passendem Zweck, sonst None."""
+    payload = _unsign(token)
+    if not payload or payload.get("purpose") != purpose or not payload.get("email"):
+        return None
+    return payload
 
 
 def read_action_token(token: str | None, purpose: str) -> str | None:
     """E-Mail aus einem gültigen Aktions-Token mit passendem Zweck, sonst None."""
-    if not token or "." not in token:
-        return None
-    try:
-        body, sig = token.split(".", 1)
-        expected = _b64e(hmac.new(_SECRET, body.encode("ascii"), hashlib.sha256).digest())
-        if not hmac.compare_digest(sig, expected):
-            return None
-        payload = json.loads(_b64d(body))
-        if payload.get("purpose") != purpose:
-            return None
-        if int(payload.get("exp", 0)) < time.time():
-            return None
-        return payload.get("email")
-    except (ValueError, json.JSONDecodeError):
-        return None
+    payload = read_action_payload(token, purpose)
+    return payload["email"] if payload else None

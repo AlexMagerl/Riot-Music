@@ -352,6 +352,15 @@ function renderAdminLogin(mode, loggedInAs) {
     try {
       const btn = $("button[type=submit]", form); btn.disabled = true;
       const data = await apiSend("POST", url, fd);
+      if (data.mfaRequired) {
+        RiotSecurity.mfaChallenge(card.parentElement, { mfaToken: data.mfaToken,
+          onSuccess: (res) => {
+            if (res.role !== "admin") { toast("Dieses Konto hat keinen Admin-Zugang.", "error"); return location.reload(); }
+            toast("Willkommen!", "ok"); startAdmin();
+          },
+          onCancel: () => renderAdminLogin("login") });
+        return;
+      }
       if (data.role !== "admin" && mode !== "bootstrap") {
         toast("Dieses Konto hat keinen Admin-Zugang.", "error");
         btn.disabled = false;
@@ -367,10 +376,41 @@ function renderAdminLogin(mode, loggedInAs) {
   });
 
   card.appendChild(form);
+  if (mode === "login") {
+    card.appendChild(el("div", { style: "text-align:center;margin-top:12px" },
+      el("a", { href: "#", class: "back-link", onclick: (e) => {
+        e.preventDefault();
+        const box = el("div", { style: "margin:8vh auto 0" });
+        layout.replaceChildren(box);
+        RiotSecurity.forgotForm(box, { onBack: () => renderAdminLogin("login") });
+      } }, "Passwort vergessen?")));
+  }
   layout.appendChild(card);
 }
 
+/* Admin ohne 2FA: Einrichtung ist Pflicht, bevor der Admin-Bereich öffnet. */
+function renderForcedTwoFactor() {
+  const layout = document.querySelector(".studio-layout");
+  const box = el("div");
+  layout.replaceChildren(el("div", { class: "auth-card sec-setup-card", style: "margin:6vh auto 0" },
+    el("h1", {}, "🔐 Zwei-Faktor-Anmeldung einrichten"), box));
+  RiotSecurity.twoFactorSetup(box, { forced: true, onDone: () => startAdmin() });
+}
+
+function showSecurity() {
+  state.selectedId = null;
+  state.creating = false;
+  renderSidebar();
+  const main = $("#studio-main");
+  main.replaceChildren(RiotSecurity.securityPanel({ onLoggedOut: () => location.reload() }));
+}
+
 async function startAdmin() {
+  // Ohne 2FA bleibt der Admin-Bereich zu (der Server verweigert ihn ohnehin).
+  try {
+    const sec = await apiGet("/api/account/security");
+    if (!sec.twoFactor) return renderForcedTwoFactor();
+  } catch { /* nicht eingeloggt → Server-Antworten unten zeigen das */ }
   const layout = document.querySelector(".studio-layout");
   layout.innerHTML = "";
   const aside = el("aside", { class: "studio-side" });
@@ -392,6 +432,8 @@ async function startAdmin() {
   refreshUnverifiedBadge(unverifiedBtn);
   aside.appendChild(el("button", { class: "ghost-btn full", style: "margin-top:8px",
     onclick: showSettings }, "⚙ E-Mail-Einstellungen"));
+  aside.appendChild(el("button", { class: "ghost-btn full", style: "margin-top:8px",
+    onclick: showSecurity }, "🔐 Sicherheit"));
   aside.appendChild(el("div", { id: "artist-list", class: "studio-artist-list" }));
   const main = el("main", { class: "studio-main", id: "studio-main" });
   main.appendChild(el("div", { class: "studio-placeholder" },

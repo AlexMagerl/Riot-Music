@@ -168,6 +168,49 @@ def prune_unverified(older_than_seconds: int) -> list[str]:
     return removed_artist_ids
 
 
+# ---------------------------------------------------------------------------
+# Sicherheit: Sitzungsversion, Passwort, 2FA
+# ---------------------------------------------------------------------------
+def update(email: str, **fields) -> dict | None:
+    """Felder eines Kontos setzen (None löscht das Feld)."""
+    with _lock:
+        user = find_user(email)
+        if not user:
+            return None
+        for key, value in fields.items():
+            if value is None:
+                user.pop(key, None)
+            else:
+                user[key] = value
+        save()
+        return user
+
+
+def session_version(user: dict | None) -> int:
+    return int((user or {}).get("sessionVersion", 0))
+
+
+def bump_session_version(email: str) -> dict | None:
+    """Beendet alle bestehenden Sitzungen und „gemerkten Geräte“ des Kontos."""
+    with _lock:
+        user = find_user(email)
+        if not user:
+            return None
+        return update(email, sessionVersion=session_version(user) + 1)
+
+
+def set_password(email: str, password_hash: str, logout_everywhere: bool = True) -> dict | None:
+    with _lock:
+        user = update(email, password=password_hash)
+        if user and logout_everywhere:
+            user = bump_session_version(email)
+        return user
+
+
+def has_2fa(user: dict | None) -> bool:
+    return bool(user and user.get("totpEnabled") and user.get("totpSecret"))
+
+
 def has_admin() -> bool:
     """Gibt es bereits mindestens einen Admin-Account?"""
     return any(u.get("role") == "admin" for u in data()["users"])

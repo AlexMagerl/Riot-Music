@@ -430,3 +430,33 @@
 .accent-custom::-webkit-color-swatch-wrapper { padding: 0; }
 .accent-custom::-webkit-color-swatch { border: none; border-radius: 4px; }
 .accent-custom::-moz-color-swatch { border: none; border-radius: 4px; }
+
+/* ---------- Konto-Sicherheit (js/security.js) ---------- */
+.sec-big-ico { font-size: 2.4rem; text-align: center; }
+.sec-panel h4 { margin: 0 0 8px; font-size: 1rem; }
+.sec-block { padding: 16px 0; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 10px; }
+.sec-panel > h3 + .sec-block { border-top: none; padding-top: 4px; }
+.sec-on { color: #6cd28a; }
+.sec-off { color: var(--text-faint); }
+.sec-code-input {
+  font-size: 1.4rem; letter-spacing: 0.2em; text-align: center; max-width: 260px;
+  font-variant-numeric: tabular-nums;
+}
+.sec-warning {
+  background: rgba(228, 37, 43, 0.12); border: 1px solid var(--accent); border-radius: 6px;
+  padding: 10px 12px; color: var(--text); font-size: 0.9rem; line-height: 1.5; margin: 0 0 12px;
+}
+.sec-steps { margin: 0 0 12px; padding-left: 20px; color: var(--text-dim); line-height: 1.6; }
+.sec-qr-wrap { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-bottom: 16px; }
+.sec-qr { background: #fff; padding: 8px; border-radius: 8px; line-height: 0; }
+.sec-qr svg { width: 200px; height: 200px; }
+.sec-secret { font-size: 0.95rem; letter-spacing: 0.06em; word-break: break-all; user-select: all; }
+.sec-codes {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px;
+  background: #0b0b0c; border: 1px solid var(--border); border-radius: 6px; padding: 14px; margin-bottom: 12px;
+}
+.sec-codes code { font-size: 1rem; letter-spacing: 0.05em; text-align: center; user-select: all; }
+.sec-recovery .btn-row { flex-wrap: wrap; align-items: center; }
+.sec-setup-card { max-width: 520px; }
+/* Einzelne Karte (Login, 2FA, Passwort vergessen) im Admin-Raster über die volle Breite */
+.studio-layout > :only-child { grid-column: 1 / -1; justify-self: center; align-self: start; width: min(100%, 520px); }

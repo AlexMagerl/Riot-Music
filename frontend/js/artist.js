@@ -106,6 +106,13 @@ function renderAuth(mode = "login") {
 
   form.appendChild(el("button", { type: "submit", class: "primary-btn full" },
     mode === "login" ? "Anmelden" : "Profil anlegen"));
+  if (mode === "login") {
+    form.appendChild(el("div", { style: "text-align:center;margin-top:4px" },
+      el("a", { href: "#", class: "back-link", onclick: (e) => {
+        e.preventDefault();
+        RiotSecurity.forgotForm(root(), { onBack: () => renderAuth("login") });
+      } }, "Passwort vergessen?")));
+  }
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -116,6 +123,14 @@ function renderAuth(mode = "login") {
       const btn = $("button[type=submit]", form); btn.disabled = true;
       const data = await apiSend("POST", url, fd);
 
+      // 2FA aktiv → zweiter Schritt: Code aus der Authenticator-App.
+      if (data.mfaRequired) {
+        RiotSecurity.mfaChallenge(root(), { mfaToken: data.mfaToken,
+          onSuccess: (res) => afterLogin(res, "Willkommen zurück!"),
+          onCancel: () => renderAuth("login") });
+        return;
+      }
+
       // Registrierung wartet auf E-Mail-Bestätigung bzw. Admin-Freigabe.
       if (data.pending) {
         if (data.stage === "approval") renderPendingApproval();
@@ -123,15 +138,7 @@ function renderAuth(mode = "login") {
         return;
       }
 
-      state.artist = data.artist;
-      state.email = data.email;
-      toast(mode === "login" ? "Willkommen zurück!" : "Profil angelegt — leg los!", "ok");
-      if (!state.artist) {
-        console.error("state.artist is null after login/register");
-        toast("Fehler: Künstler-Daten nicht geladen", "error");
-        return;
-      }
-      setTimeout(() => renderEditor(), 100);
+      afterLogin(data, mode === "login" ? "Willkommen zurück!" : "Profil angelegt — leg los!");
     } catch (err) {
       const btn = $("button[type=submit]", form); if (btn) btn.disabled = false;
       // Login mit noch nicht bestätigter E-Mail -> Bestätigungs-Screen anbieten.
@@ -153,6 +160,18 @@ function renderAuth(mode = "login") {
     el("h1", {}, "Künstlerbereich"),
     el("p", { class: "auth-sub" }, "Verwalte dein eigenes Profil, deine Releases und Songs."),
     tabs, form));
+}
+
+/* Nach erfolgreichem Login (direkt oder nach dem 2FA-Code). */
+function afterLogin(data, msg) {
+  state.artist = data.artist;
+  state.email = data.email;
+  if (!state.artist) {
+    toast("Dieses Konto hat kein Künstlerprofil (Admin? → /admin.html).", "error");
+    return;
+  }
+  toast(msg, "ok");
+  setTimeout(() => renderEditor(), 100);
 }
 
 /* ---- Kuratierung: Hinweis „wartet auf Freischaltung" ---- */
@@ -369,6 +388,11 @@ function renderEditor() {
   leftColumn.appendChild(renderProfilePanel(a));
   leftColumn.appendChild(renderUploadPanel(a));
   leftColumn.appendChild(renderReleasesPanel(a));
+  leftColumn.appendChild(RiotSecurity.securityPanel({ onLoggedOut: () => {
+    state.artist = null; state.email = null;
+    toast("Auf allen Geräten abgemeldet.", "ok");
+    renderAuth("login");
+  } }));
 
   mainContainer.appendChild(leftColumn);
   mainContainer.appendChild(renderGuidelines());
@@ -856,6 +880,14 @@ async function logout() {
 
 /* ---- Start ---- */
 (async function init() {
+  // Link aus der „Passwort vergessen“-Mail: /artist.html#reset=<token>
+  const reset = /^#reset=(.+)$/.exec(location.hash);
+  if (reset) {
+    history.replaceState(null, "", location.pathname);   // Token nicht in der Adresszeile lassen
+    RiotSecurity.resetForm(root(), decodeURIComponent(reset[1]), {
+      onDone: (role) => { if (role === "admin") location.href = "/admin.html"; else renderAuth("login"); } });
+    return;
+  }
   try {
     state.genres = await apiJson("/api/genres");
     const me = await apiJson("/api/auth/me");

@@ -32,6 +32,7 @@ import donations
 import fingerprint
 import images
 import mail
+import mfa
 import plays
 import ratelimit
 import social
@@ -53,6 +54,10 @@ ALLOWED_AUDIO_CT = {"audio/mpeg", "audio/mp3"}
 
 VERIFY_TTL = 60 * 60 * 48          # E-Mail-Bestätigungslink: 48 Stunden gültig
 UNVERIFIED_MAX_AGE = 60 * 60 * 24 * 7   # unbestätigte Accounts nach 7 Tagen löschbar
+TWO_FA_REQUIRED_MSG = ("2FA_REQUIRED: Für den Admin-Bereich ist die Zwei-Faktor-"
+                       "Anmeldung Pflicht. Bitte richte sie zuerst ein.")
+MFA_TTL = 300                            # 5 Minuten für die Code-Eingabe nach dem Passwort
+RESET_TTL = 60 * 60                      # Passwort-Reset-Link: 1 Stunde
 PENDING_APPROVAL_MSG = ("Dein Konto wartet noch auf die Freischaltung durch uns. "
                         "Du bekommst eine E-Mail, sobald es so weit ist.")
 
@@ -314,16 +319,37 @@ def search(q: str = "", genre: str | None = None):
 # ---------------------------------------------------------------------------
 # Auth-Dependencies (vor Management & Studio, weil dort als Depends genutzt)
 # ---------------------------------------------------------------------------
-def _set_session(response: Response, email: str) -> None:
+def _cookie_secure(request: Request) -> bool:
+    """Secure-Flag, sobald die Seite über HTTPS läuft (live hinter Caddy)."""
+    return request.url.scheme == "https"
+
+
+def _set_session(request: Request, response: Response, user: dict) -> None:
     response.set_cookie(
-        auth.COOKIE_NAME, auth.make_token(email),
+        auth.COOKIE_NAME, auth.make_token(user["email"], accounts.session_version(user)),
         max_age=auth.TOKEN_TTL, httponly=True, samesite="lax", path="/",
+        secure=_cookie_secure(request),
     )
 
 
 def current_user(rm_session: str | None = Cookie(default=None)) -> dict | None:
-    email = auth.read_token(rm_session)
-    return accounts.find_user(email) if email else None
+    session = auth.read_session(rm_session)
+    if not session:
+        return None
+    user = accounts.find_user(session["email"])
+    # Sitzung von vor „Passwort geändert“ / „überall abmelden“ → ungültig.
+    if not user or session["sv"] != accounts.session_version(user):
+        return None
+    return user
+
+
+def require_user(user: dict | None = Depends(current_user)) -> dict:
+    """Angemeldet und aktiv (Künstler:in oder Admin)."""
+    if not user:
+        raise HTTPException(status_code=401, detail="Bitte zuerst anmelden.")
+    if not accounts.is_active(user):
+        raise HTTPException(status_code=403, detail=PENDING_APPROVAL_MSG)
+    return user
 
 
 def require_artist(user: dict | None = Depends(current_user)) -> dict:
@@ -342,6 +368,9 @@ def require_admin(user: dict | None = Depends(current_user)) -> dict:
         raise HTTPException(status_code=401, detail="Bitte zuerst anmelden.")
     if not accounts.is_admin(user):
         raise HTTPException(status_code=403, detail="Kein Admin-Zugang.")
+    # Das Admin-Konto ist das wertvollste – ohne 2FA kein Zugriff.
+    if not accounts.has_2fa(user):
+        raise HTTPException(status_code=403, detail=TWO_FA_REQUIRED_MSG)
     return user
 
 
@@ -787,7 +816,7 @@ def verify_email(token: str, request: Request, response: Response):
     accounts.set_verified(email)
     if accounts.is_approved(user):
         # Direkt einloggen – bequemer Übergang in den Editor.
-        _set_session(response, email)
+        _set_session(request, response, accounts.find_user(email))
         return Response(content=page(ok=True,
                         msg="Deine E-Mail wurde bestätigt. Dein Profil ist jetzt aktiv."),
                         media_type="text/html")
@@ -869,24 +898,74 @@ def admin_register(
         raise HTTPException(status_code=400, detail="Passwort muss mind. 8 Zeichen haben.")
     if accounts.find_user(email):
         raise HTTPException(status_code=400, detail="Diese E-Mail ist bereits registriert.")
-    accounts.add_user(email, auth.hash_password(password), artist_id="", role="admin")
+    user = accounts.add_user(email, auth.hash_password(password), artist_id="", role="admin")
     ratelimit.record_registration(ip)
-    _set_session(response, email)
-    return {"email": email, "role": "admin"}
+    _set_session(request, response, user)
+    # Als Nächstes muss die 2FA eingerichtet werden (require_admin verlangt sie).
+    return {"email": email, "role": "admin", "twoFactor": False}
+
+
+def _check_account_lock(email: str) -> None:
+    secs = ratelimit.account_locked(email)
+    if secs:
+        raise HTTPException(
+            status_code=429,
+            detail="Dieses Konto ist wegen zu vieler Fehlversuche vorübergehend gesperrt. "
+                   f"Bitte in {max(1, secs // 60)} Minuten erneut versuchen.")
+
+
+def _login_result(request: Request, response: Response, user: dict) -> dict:
+    _set_session(request, response, user)
+    result = {"email": user["email"], "role": user.get("role", "artist"),
+              "twoFactor": accounts.has_2fa(user)}
+    if user.get("artistId"):
+        result["artist"] = artist_full(store.find_artist(user["artistId"]), include_private=True)
+    return result
+
+
+def _trusted_device(user: dict, token: str | None) -> bool:
+    """Wurde auf diesem Gerät „30 Tage merken“ gewählt (und seitdem nichts zurückgesetzt)?"""
+    p = auth.read_action_payload(token, "trust")
+    return bool(p and p["email"] == user["email"]
+                and int(p.get("sv", -1)) == accounts.session_version(user))
+
+
+def _check_second_factor(user: dict, code: str) -> bool:
+    """Authenticator-Code oder Wiederherstellungscode prüfen (und verbrauchen)."""
+    code = (code or "").strip()
+    if mfa.looks_like_recovery_code(code):
+        rest = mfa.consume_recovery_code(user.get("recoveryCodes", []), code)
+        if rest is None:
+            return False
+        accounts.update(user["email"], recoveryCodes=rest)
+        return True
+    step = mfa.verify(user.get("totpSecret", ""), code, int(user.get("totpLastStep", 0)))
+    if step is None:
+        return False
+    accounts.update(user["email"], totpLastStep=step)   # gleicher Code nicht zweimal
+    return True
+
+
+def _fail_password(request: Request, email: str, detail: str, status: int = 401):
+    ip = request.client.host if request.client else "unknown"
+    ip_locked = ratelimit.record_failure(ip)
+    acct_locked = ratelimit.record_account_failure(email)
+    if ip_locked or acct_locked:
+        detail += f" Zu viele Versuche — {ratelimit.LOCKOUT_SECONDS // 60} Minuten gesperrt."
+    raise HTTPException(status_code=status, detail=detail)
 
 
 @app.post("/api/auth/login")
 def login(request: Request, response: Response,
-          email: str = Form(...), password: str = Form(...)):
+          email: str = Form(...), password: str = Form(...),
+          rm_trust: str | None = Cookie(default=None)):
     ip = request.client.host if request.client else "unknown"
     _check_rate_limit(request)
+    email = email.strip().lower()
+    _check_account_lock(email)
     user = accounts.find_user(email)
     if not user or not auth.verify_password(password, user["password"]):
-        locked = ratelimit.record_failure(ip)
-        detail = "E-Mail oder Passwort falsch."
-        if locked:
-            detail += f" Zu viele Versuche — {ratelimit.LOCKOUT_SECONDS // 60} Minuten gesperrt."
-        raise HTTPException(status_code=401, detail=detail)
+        _fail_password(request, email, "E-Mail oder Passwort falsch.")
     # Erst nach E-Mail-Bestätigung einloggbar.
     if not accounts.is_verified(user):
         ratelimit.record_success(ip)   # kein Brute-Force – Passwort war korrekt
@@ -899,10 +978,48 @@ def login(request: Request, response: Response,
         ratelimit.record_success(ip)
         raise HTTPException(status_code=403, detail=PENDING_APPROVAL_MSG)
     ratelimit.record_success(ip)
-    _set_session(response, user["email"])
-    result = {"email": user["email"], "role": user.get("role", "artist")}
-    if user.get("artistId"):
-        result["artist"] = artist_full(store.find_artist(user["artistId"]), include_private=True)
+    # Alte Hashes (weniger Runden) unbemerkt auf heutigen Stand bringen.
+    if auth.needs_rehash(user["password"]):
+        user = accounts.update(email, password=auth.hash_password(password))
+    # 2FA aktiv? Dann erst nach dem Code einloggen – außer auf gemerkten Geräten.
+    if accounts.has_2fa(user) and not _trusted_device(user, rm_trust):
+        token = auth.make_action_token(email, "mfa", MFA_TTL,
+                                       sv=accounts.session_version(user))
+        return {"mfaRequired": True, "mfaToken": token}
+    ratelimit.reset_account(email)
+    return _login_result(request, response, user)
+
+
+@app.post("/api/auth/mfa")
+def login_mfa(request: Request, response: Response,
+              mfaToken: str = Form(...), code: str = Form(...), remember: str = Form("")):
+    """Zweiter Schritt der Anmeldung: Code aus der Authenticator-App."""
+    _check_rate_limit(request)
+    expired = "Die Anmeldung ist abgelaufen. Bitte melde dich erneut an."
+    p = auth.read_action_payload(mfaToken, "mfa")
+    if not p:
+        raise HTTPException(status_code=401, detail=expired)
+    email = p["email"]
+    _check_account_lock(email)
+    user = accounts.find_user(email)
+    if (not user or not accounts.is_active(user) or not accounts.has_2fa(user)
+            or int(p.get("sv", -1)) != accounts.session_version(user)):
+        raise HTTPException(status_code=401, detail=expired)
+    used_recovery = mfa.looks_like_recovery_code(code)
+    if not _check_second_factor(user, code):
+        _fail_password(request, email, "Der Code stimmt nicht.")
+    ratelimit.reset_account(email)
+    user = accounts.find_user(email)
+    if remember.strip().lower() in ("on", "true", "1", "yes"):
+        response.set_cookie(
+            auth.TRUST_COOKIE,
+            auth.make_action_token(email, "trust", auth.TRUST_TTL,
+                                   sv=accounts.session_version(user)),
+            max_age=auth.TRUST_TTL, httponly=True, samesite="lax", path="/",
+            secure=_cookie_secure(request))
+    result = _login_result(request, response, user)
+    if used_recovery:
+        result["recoveryCodesLeft"] = len(user.get("recoveryCodes", []))
     return result
 
 
@@ -920,7 +1037,148 @@ def whoami(user: dict | None = Depends(current_user)):
     artist = store.find_artist(user.get("artistId", "")) if user.get("artistId") else None
     return {"authenticated": True, "email": user["email"],
             "role": user.get("role", "artist"),
+            "twoFactor": accounts.has_2fa(user),
             "artist": artist_full(artist, include_private=True) if artist else None}
+
+
+# ---------------------------------------------------------------------------
+# Konto-Sicherheit: 2FA, Passwort, Sitzungen (für Künstler:innen und Admin)
+# ---------------------------------------------------------------------------
+def _validate_new_password(password: str, email: str) -> None:
+    if len(password) < 8:
+        raise HTTPException(status_code=400, detail="Passwort muss mind. 8 Zeichen haben.")
+    if password.strip().lower() == (email or "").lower():
+        raise HTTPException(status_code=400, detail="Das Passwort darf nicht deine E-Mail-Adresse sein.")
+
+
+def _notify(email: str, what: str) -> None:
+    if mail.can_send():
+        mail.send_security_notice(email, what)
+
+
+@app.get("/api/account/security")
+def account_security(user: dict = Depends(require_user)):
+    return {"email": user["email"], "role": user.get("role", "artist"),
+            "twoFactor": accounts.has_2fa(user),
+            "twoFactorRequired": accounts.is_admin(user),
+            "recoveryCodesLeft": len(user.get("recoveryCodes", []))}
+
+
+@app.post("/api/account/2fa/setup")
+def twofa_setup(user: dict = Depends(require_user)):
+    """Neues Geheimnis erzeugen (wird erst nach Bestätigung per Code aktiv)."""
+    secret = mfa.new_secret()
+    accounts.update(user["email"], totpPendingSecret=secret)
+    return {"secret": secret, "uri": mfa.otpauth_uri(secret, user["email"])}
+
+
+@app.post("/api/account/2fa/enable")
+def twofa_enable(code: str = Form(...), user: dict = Depends(require_user)):
+    pending = user.get("totpPendingSecret")
+    if not pending:
+        raise HTTPException(status_code=400, detail="Bitte starte die Einrichtung neu.")
+    step = mfa.verify(pending, code)
+    if step is None:
+        raise HTTPException(status_code=400,
+                            detail="Der Code stimmt nicht. Tipp: Die Uhrzeit des Handys "
+                                   "muss automatisch eingestellt sein.")
+    plain, hashes = mfa.new_recovery_codes()
+    accounts.update(user["email"], totpSecret=pending, totpEnabled=True, totpLastStep=step,
+                    recoveryCodes=hashes, totpPendingSecret=None)
+    _notify(user["email"], "Die Zwei-Faktor-Anmeldung wurde aktiviert.")
+    return {"ok": True, "recoveryCodes": plain}
+
+
+@app.post("/api/account/2fa/disable")
+def twofa_disable(request: Request, password: str = Form(...), code: str = Form(...),
+                  user: dict = Depends(require_user)):
+    if accounts.is_admin(user):
+        raise HTTPException(status_code=403,
+                            detail="Für das Admin-Konto ist die Zwei-Faktor-Anmeldung Pflicht.")
+    if not auth.verify_password(password, user["password"]):
+        _fail_password(request, user["email"], "Das Passwort stimmt nicht.", status=400)
+    if not _check_second_factor(user, code):
+        _fail_password(request, user["email"], "Der Code stimmt nicht.", status=400)
+    accounts.update(user["email"], totpEnabled=None, totpSecret=None, totpLastStep=None,
+                    recoveryCodes=None, totpPendingSecret=None)
+    _notify(user["email"], "Die Zwei-Faktor-Anmeldung wurde ausgeschaltet.")
+    return {"ok": True}
+
+
+@app.post("/api/account/2fa/recovery-codes")
+def twofa_new_recovery_codes(request: Request, code: str = Form(...),
+                             user: dict = Depends(require_user)):
+    if not accounts.has_2fa(user):
+        raise HTTPException(status_code=400, detail="Die Zwei-Faktor-Anmeldung ist nicht aktiv.")
+    if not _check_second_factor(user, code):
+        _fail_password(request, user["email"], "Der Code stimmt nicht.", status=400)
+    plain, hashes = mfa.new_recovery_codes()
+    accounts.update(user["email"], recoveryCodes=hashes)
+    _notify(user["email"], "Es wurden neue Wiederherstellungscodes erzeugt; die alten gelten nicht mehr.")
+    return {"recoveryCodes": plain}
+
+
+@app.post("/api/account/password")
+def change_password(request: Request, response: Response,
+                    currentPassword: str = Form(...), newPassword: str = Form(...),
+                    user: dict = Depends(require_user)):
+    if not auth.verify_password(currentPassword, user["password"]):
+        _fail_password(request, user["email"], "Das aktuelle Passwort stimmt nicht.", status=400)
+    _validate_new_password(newPassword, user["email"])
+    # Neues Passwort beendet alle anderen Sitzungen; dieses Gerät bleibt angemeldet.
+    user = accounts.set_password(user["email"], auth.hash_password(newPassword))
+    _set_session(request, response, user)
+    _notify(user["email"], "Dein Passwort wurde geändert.")
+    return {"ok": True}
+
+
+@app.post("/api/account/logout-all")
+def logout_everywhere(response: Response, user: dict = Depends(require_user)):
+    accounts.bump_session_version(user["email"])
+    response.delete_cookie(auth.COOKIE_NAME, path="/")
+    response.delete_cookie(auth.TRUST_COOKIE, path="/")
+    return {"ok": True}
+
+
+@app.post("/api/auth/forgot")
+def forgot_password(request: Request, email: str = Form(...),
+                    captchaId: str = Form(...), captchaAnswer: str = Form(...),
+                    website: str = Form("")):
+    """Schickt einen Link zum Setzen eines neuen Passworts (falls das Konto existiert)."""
+    _check_rate_limit(request)
+    ip = request.client.host if request.client else "unknown"
+    if website.strip():
+        raise HTTPException(status_code=400, detail="Spam erkannt.")
+    if ratelimit.registration_blocked(ip):
+        raise HTTPException(status_code=429, detail="Zu viele Anfragen. Bitte später erneut versuchen.")
+    if not captcha.check(captchaId, captchaAnswer):
+        raise HTTPException(status_code=400, detail=CAPTCHA_FAILED_MSG)
+    ratelimit.record_registration(ip)
+    email = email.strip().lower()
+    user = accounts.find_user(email)
+    # Immer dieselbe Antwort – verrät nicht, ob die Adresse registriert ist.
+    if user and mail.can_send():
+        token = auth.make_action_token(email, "reset", RESET_TTL,
+                                       sv=accounts.session_version(user))
+        mail.send_password_reset(email, f"{_base_url(request)}/artist.html#reset={token}")
+    return {"ok": True, "mailEnabled": mail.can_send()}
+
+
+@app.post("/api/auth/reset")
+def reset_password(request: Request, token: str = Form(...), password: str = Form(...)):
+    _check_rate_limit(request)
+    p = auth.read_action_payload(token, "reset")
+    user = accounts.find_user(p["email"]) if p else None
+    # Nach dem Setzen erhöht sich die Sitzungsversion → der Link gilt nur einmal.
+    if not user or int(p.get("sv", -1)) != accounts.session_version(user):
+        raise HTTPException(status_code=400,
+                            detail="Der Link ist ungültig, abgelaufen oder wurde schon benutzt. "
+                                   "Bitte fordere einen neuen an.")
+    _validate_new_password(password, user["email"])
+    accounts.set_password(user["email"], auth.hash_password(password))
+    ratelimit.reset_account(user["email"])
+    _notify(user["email"], "Dein Passwort wurde über „Passwort vergessen“ neu gesetzt.")
+    return {"ok": True, "role": user.get("role", "artist")}
 
 
 @app.get("/api/auth/admin-exists")

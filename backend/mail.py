@@ -132,3 +132,28 @@ def send_approved(to_email: str, login_link: str, artist_name: str = "") -> bool
         "✊ Riot Music"
     )
     return _send(to_email, "Dein Riot-Music-Konto ist freigeschaltet", body)
+
+
+def send_password_reset(to_email: str, reset_link: str) -> bool:
+    body = (
+        "Hallo,\n\n"
+        "für dein Konto bei Riot Music wurde ein neues Passwort angefordert. "
+        "Über diesen Link kannst du es festlegen (gültig für 1 Stunde):\n\n"
+        f"{reset_link}\n\n"
+        "Falls du das nicht warst, ignoriere diese E-Mail einfach – dein bisheriges "
+        "Passwort bleibt dann unverändert.\n\n"
+        "✊ Riot Music"
+    )
+    return _send(to_email, "Neues Passwort für Riot Music", body)
+
+
+def send_security_notice(to_email: str, what: str) -> bool:
+    """Info-Mail bei sicherheitsrelevanten Änderungen am Konto."""
+    body = (
+        "Hallo,\n\n"
+        f"an deinem Riot-Music-Konto wurde gerade etwas geändert: {what}\n\n"
+        "Warst du das selbst, ist alles in Ordnung. Falls nicht, setze bitte sofort "
+        "über „Passwort vergessen?“ ein neues Passwort und melde dich bei uns.\n\n"
+        "✊ Riot Music"
+    )
+    return _send(to_email, "Sicherheitshinweis zu deinem Riot-Music-Konto", body)

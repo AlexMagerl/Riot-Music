@@ -126,3 +126,50 @@ def record_contact(ip: str) -> None:
     with _lock:
         _prune_contacts_locked(ip)
         _contacts.setdefault(ip, []).append(time.time())
+
+
+# ---------------------------------------------------------------------------
+# Sperre pro Konto (zusätzlich zur IP-Sperre): schützt ein einzelnes Konto
+# auch gegen Angriffe von vielen IP-Adressen gleichzeitig.
+# ---------------------------------------------------------------------------
+ACCOUNT_MAX_FAILS = 10
+ACCOUNT_WINDOW_SECONDS = 900
+ACCOUNT_LOCK_SECONDS = 900
+
+_account_fails: dict[str, list[float]] = {}
+_account_locks: dict[str, float] = {}
+
+
+def account_locked(email: str) -> int:
+    """Restsekunden der Kontosperre (0 = nicht gesperrt)."""
+    key = (email or "").strip().lower()
+    with _lock:
+        until = _account_locks.get(key, 0)
+        if until > time.time():
+            return int(until - time.time()) + 1
+        _account_locks.pop(key, None)
+        return 0
+
+
+def record_account_failure(email: str) -> bool:
+    """Fehlversuch (Passwort oder 2FA-Code) für ein Konto. True = jetzt gesperrt."""
+    key = (email or "").strip().lower()
+    if not key:
+        return False
+    with _lock:
+        now = time.time()
+        fails = [t for t in _account_fails.get(key, []) if t > now - ACCOUNT_WINDOW_SECONDS]
+        fails.append(now)
+        if len(fails) >= ACCOUNT_MAX_FAILS:
+            _account_locks[key] = now + ACCOUNT_LOCK_SECONDS
+            _account_fails.pop(key, None)
+            return True
+        _account_fails[key] = fails
+        return False
+
+
+def reset_account(email: str) -> None:
+    key = (email or "").strip().lower()
+    with _lock:
+        _account_fails.pop(key, None)
+        _account_locks.pop(key, None)
