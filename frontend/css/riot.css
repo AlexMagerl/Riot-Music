@@ -129,15 +129,6 @@ body {
   color: #fff; text-shadow: 4px 4px 0 var(--accent);
 }
 .hero p { color: #d4d4d8; font-size: 1.08rem; }
-/* Gesprühte Parole als Sticker in der Ecke */
-.hero::after {
-  content: "Musik gehört den Menschen";
-  position: absolute; top: 20px; right: -34px;
-  font-family: var(--display); text-transform: uppercase; letter-spacing: 0.06em;
-  font-size: 0.8rem; color: var(--ink); background: var(--accent-soft);
-  padding: 6px 44px; transform: rotate(8deg);
-  box-shadow: 3px 3px 0 var(--ink);
-}
 
 .section-title { font-size: 1.9rem; gap: 12px; margin-bottom: 20px; }
 .section-title::before {
@@ -254,7 +245,6 @@ input[type="range"]::-moz-range-thumb {
   .nav-link .ico { width: 14px; height: 14px; }
   .nav-link.active { border-radius: 3px; }
   .hero { padding: 34px 22px 28px; box-shadow: 5px 5px 0 var(--blood); }
-  .hero::after { font-size: 0.66rem; top: 12px; right: -40px; padding: 4px 44px; }
   .section-title { font-size: 1.5rem; }
   .player-title { font-size: 1rem; }
   .ctrl { width: 36px; height: 36px; }

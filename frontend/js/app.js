@@ -1131,7 +1131,7 @@ function buildGenres() {
     view.innerHTML = `<div class="empty"><div class="big">⚠️</div>Backend nicht erreichbar.<br>Läuft der Server? (${err.message})</div>`;
     return;
   }
-  document.title = `${state.platform.name} — Musik gehört den Menschen`;
+  document.title = state.platform.name;
   buildGenres();
   router();
 })();
