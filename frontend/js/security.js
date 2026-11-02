@@ -162,7 +162,8 @@
         h("div", { class: "image-hint" }, "QR-Code geht nicht? Schlüssel manuell eingeben:"),
         h("code", { class: "sec-secret" }, setup.secret.replace(/(.{4})/g, "$1 ").trim())),
       form);
-    input.focus();
+    // Nicht zum Eingabefeld springen: Anleitung und QR-Code sollen zuerst sichtbar sein.
+    input.focus({ preventScroll: true });
   }
 
   /* ------------------------------------------------------------------

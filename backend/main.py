@@ -64,6 +64,22 @@ PENDING_APPROVAL_MSG = ("Dein Konto wartet noch auf die Freischaltung durch uns.
 app = FastAPI(title="Riot Music API", version="0.3.0")
 
 
+@app.middleware("http")
+async def revalidate_site_files(request: Request, call_next):
+    """
+    Seiten, CSS und JS: Browser sollen vor der Nutzung kurz beim Server
+    nachfragen (Antwort meist „304 – unverändert“, also kaum Datenverkehr).
+    Ohne diesen Header behalten Browser alte Dateien teils tagelang – nach einem
+    Deploy sähen Besucher sonst noch das alte Layout. Medien und API ausgenommen.
+    """
+    response = await call_next(request)
+    path = request.url.path
+    if (not path.startswith(("/api/", "/media/"))
+            and "cache-control" not in response.headers):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 # ---------------------------------------------------------------------------
 # Anreicherung: Bild-/Audio-URLs an die rohen Katalogdaten hängen
 # ---------------------------------------------------------------------------

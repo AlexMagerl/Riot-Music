@@ -459,4 +459,7 @@
 .sec-recovery .btn-row { flex-wrap: wrap; align-items: center; }
 .sec-setup-card { max-width: 520px; }
 /* Einzelne Karte (Login, 2FA, Passwort vergessen) im Admin-Raster über die volle Breite */
-.studio-layout > :only-child { grid-column: 1 / -1; justify-self: center; align-self: start; width: min(100%, 520px); }
+.studio-layout > :only-child { grid-column: 1 / -1; justify-self: center; align-self: start; width: min(100% - 24px, 520px); }
+/* Einzelne Karte höher als der Bildschirm (z. B. 2FA-Einrichtung): scrollen statt abschneiden */
+.studio-layout:has(> :only-child) { overflow-y: auto; }
+.studio-layout > :only-child { margin-bottom: 40px; }
